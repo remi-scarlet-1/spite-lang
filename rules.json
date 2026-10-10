@@ -1,0 +1,2710 @@
+{
+  "_info": {
+    "version": "0.1.0",
+    "license": "GPL-3.0-only"
+  },
+  "lexical": {
+    "comment": {
+      "line": {
+        "kind": "definition",
+        "statement": "A `//` token starts a comment that runs to the end of the same line; the comment, including its delimiter, is ignored.",
+        "formal": "`//` … until `\\n` or EOF ⇒ no token.",
+        "inputs": "source text containing `//`.",
+        "outputs": "zero tokens; the remainder of the line is not lexed.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "block": {
+        "kind": "definition",
+        "statement": "A `/*` token starts a comment terminated by the first (next) `*/`; comments do not nest, and the comment with its delimiters is ignored.",
+        "formal": "`/*` … `*/` ⇒ no token; the first `*/` after `/*` terminates the comment (no nesting).",
+        "inputs": "source text containing `/*`.",
+        "outputs": "zero tokens up to and including the first terminating `*/`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "placement": {
+        "kind": "definition",
+        "statement": "A comment may appear anywhere whitespace may appear and is ignored, i.e. it is whitespace for the purpose of token separation.",
+        "formal": "comment ≡ whitespace in the token stream.",
+        "inputs": "a token stream; a comment occurrence.",
+        "outputs": "the token stream with the comment elided as if whitespace.",
+        "depends_on": [
+          "lexical.comment.line",
+          "lexical.comment.block"
+        ],
+        "status": "draft"
+      }
+    },
+    "integer": {
+      "default-type": {
+        "kind": "definition",
+        "statement": "An unsuffixed integer literal has type `i32` when no context type applies.",
+        "formal": "`type(lit) = i32` if `ctx_int = ⊥` (not at a context position of integer type).",
+        "inputs": "an unsuffixed integer literal; absence of an integer context type.",
+        "outputs": "the literal typed `i32`.",
+        "depends_on": [
+          "type.context.positions"
+        ],
+        "status": "draft"
+      },
+      "context-type": {
+        "kind": "definition",
+        "statement": "An unsuffixed integer literal takes the context's integer type when one is present at a context position.",
+        "formal": "`type(lit) = ctx_int` if `ctx_int ≠ ⊥`; `ctx_int` is the expected type at a context position, per `type.context.positions` and `type.context.propagation`.",
+        "inputs": "an unsuffixed integer literal; an integer context type.",
+        "outputs": "the literal typed as the context type.",
+        "depends_on": [
+          "type.context.positions",
+          "type.context.propagation"
+        ],
+        "status": "decided"
+      },
+      "radix": {
+        "kind": "definition",
+        "statement": "Integer literals are decimal, hexadecimal (`0x…`), or binary (`0b…`). There is no octal form and no type suffix on any literal.",
+        "formal": "`digits ::= dec | '0x' hex+ | '0b' bin+`; `literal ::= digits` (no suffix grammar).",
+        "inputs": "an integer-literal token.",
+        "outputs": "its value in the declared radix; a suffix is a lexical error.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "range": {
+        "kind": "constraint",
+        "statement": "An integer literal must be representable in its resolved type (default or context); an out-of-range literal is a compile error.",
+        "formal": "`lit` valid iff `value(lit) ∈ range(type(lit))`, else `err`. No wrapping is applied at the lexical/typing stage.",
+        "inputs": "an integer literal and its resolved type (per `lexical.integer.default-type`/`lexical.integer.context-type`).",
+        "outputs": "`err` if the value does not fit; otherwise the typed value.",
+        "depends_on": [
+          "lexical.integer.default-type",
+          "lexical.integer.context-type"
+        ],
+        "status": "decided"
+      },
+      "min-literal": {
+        "kind": "definition",
+        "statement": "A unary `-` applied to an integer literal whose value is exactly `2^(N-1)` (out of range for a signed context type of width `N`) folds to the minimum signed value, so `-2147483648` writes `i32::MIN`.",
+        "formal": "`-lit` where `⟦lit⟧ = 2^(N-1)` and the context is a signed integer of width `N` ⇒ `-2^(N-1)` (the minimum value), despite the literal itself being out of range.",
+        "inputs": "`-lit` with `lit = 2^(N-1)` in a signed context of width `N`.",
+        "outputs": "the minimum value of the signed type.",
+        "depends_on": [
+          "lexical.integer.range"
+        ],
+        "notes": "applies to any radix (`-2147483648`, `-0x80000000`, `-0b100…0`); only when the literal is exactly the boundary magnitude.",
+        "status": "decided"
+      }
+    },
+    "float": {
+      "default-type": {
+        "kind": "definition",
+        "statement": "An unsuffixed float literal has type `f32` when no context type applies.",
+        "formal": "`type(lit) = f32` if `ctx_float = ⊥` (not at a context position of float type).",
+        "inputs": "an unsuffixed float literal; absence of a float context type.",
+        "outputs": "the literal typed `f32`.",
+        "depends_on": [
+          "type.context.positions"
+        ],
+        "status": "draft"
+      },
+      "context-type": {
+        "kind": "definition",
+        "statement": "An unsuffixed float literal takes the context's float type when one is present at a context position.",
+        "formal": "`type(lit) = ctx_float` if `ctx_float ≠ ⊥`; `ctx_float` is the expected type at a context position, per `type.context.positions` and `type.context.propagation`.",
+        "inputs": "an unsuffixed float literal; a float context type.",
+        "outputs": "the literal typed as the context type.",
+        "depends_on": [
+          "type.context.positions",
+          "type.context.propagation"
+        ],
+        "status": "decided"
+      },
+      "form": {
+        "kind": "definition",
+        "statement": "A float literal is decimal and must contain a `.` or an exponent; digits are required on the right of any `.` (so `1.` is illegal, `.5` is legal). `1.0`, `.5`, `1e10`, `1.5e-3` are legal; a bare integer is not a float; there is no hex float.",
+        "formal": "`float ::= digits+ exp | digits* '.' digits+ [exp]`, where `exp ::= [eE] [+-]? digits+`. `1.0`, `.5`, `1e10`, `1.5e-3` ✓; `1.` ⇒ `err`; `1` ⇒ integer (not float).",
+        "inputs": "a float-literal token.",
+        "outputs": "its value; a non-conforming form ⇒ `err`.",
+        "depends_on": [
+          "lexical.numeric.separator"
+        ],
+        "status": "decided"
+      },
+      "rounding": {
+        "kind": "definition",
+        "statement": "A float literal is rounded to its resolved type per IEEE 754 round-to-nearest; overflow yields ±infinity and underflow yields subnormal/±0. This is never an error.",
+        "formal": "`value(lit) = round_T(lit)` with IEEE 754 round-to-nearest (tie-breaking per `type.float.ieee`); `|lit| > max(T)` ⇒ `±inf`; subnormal results are allowed. No diagnostic is produced.",
+        "inputs": "a float literal and its resolved type `T`.",
+        "outputs": "the nearest representable value in `T` (possibly `±inf`, `±0`, or subnormal); never `err`.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "status": "decided"
+      },
+      "special-literal": {
+        "kind": "definition",
+        "statement": "`inf` and `nan` are keywords that denote the special float values `+∞` and NaN, context-typed like float literals: `f32` by default, or the context's float type. `-inf` (unary minus) denotes `-∞`.",
+        "formal": "`inf` ⇒ `+∞ : f32` (or context float type); `nan` ⇒ `NaN`; `-inf` ⇒ `-∞`.",
+        "inputs": "an `inf`/`nan` token.",
+        "outputs": "the corresponding special float value, context-typed.",
+        "depends_on": [
+          "lexical.keyword.set",
+          "lexical.float.default-type"
+        ],
+        "notes": "`inf`/`nan` may be used to write these values and to compare `x == inf`/`x == -inf`; they cannot detect NaN (see `type.float.nan-test`).",
+        "status": "decided"
+      }
+    },
+    "numeric": {
+      "separator": {
+        "kind": "definition",
+        "statement": "`_` is a digit separator in any numeric literal (integer or float); it is valid only where a digit valid in the literal's radix appears on both its immediate left and right, and it never affects the value.",
+        "formal": "`_` valid iff a digit (valid in the literal's radix) is immediately to its left and to its right; else `err`. `value(…a_b…) = value(…ab…)`. `_1`, `1_`, `1__0`, `2__2`, `0x_FF`, `0b_1`, `1000_.2` ⇒ `err`; `1_000`, `1_000.5`, `1_0_0_0.5`, `0xF_F` ⇒ valid.",
+        "inputs": "a numeric literal possibly containing `_`.",
+        "outputs": "the value with `_` elided; a misplaced `_` ⇒ `err`.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "keyword": {
+      "set": {
+        "kind": "definition",
+        "statement": "The keyword set is exactly: `let mut fn struct enum match switch if else while for in yield break continue return as true false undefined inf nan`.",
+        "formal": "`KW = { let, mut, fn, struct, enum, match, switch, if, else, while, for, in, yield, break, continue, return, as, true, false, undefined, inf, nan }`. A keyword is never a valid identifier.",
+        "inputs": "an identifier token.",
+        "outputs": "whether it is a keyword.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "primitive-name": {
+      "reservation": {
+        "kind": "constraint",
+        "statement": "The primitive type names — `bool i8 i16 i32 i64 u8 u16 u32 u64 usz isz f32 f64 byte` — are reserved and cannot be shadowed; they are not keywords, but type names resolved like any other type.",
+        "formal": "`shadow(name) = err` for `name ∈ PTN`; `PTN = {bool, i8, i16, i32, i64, u8, u16, u32, u64, usz, isz, f32, f64, byte}`.",
+        "inputs": "a declaration attempting to bind/declare a name.",
+        "outputs": "`err` if the name ∈ PTN.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "precedence": {
+      "order": {
+        "kind": "definition",
+        "statement": "Operator precedence, tightest first: unary `- ! ~ & *`; `as`; `* / %`; `+ -`; `<< >>`; `& ^ |`; `< <= > >=`; `== !=`; `&&`; `||`.",
+        "formal": "total order (given) over the operator set; a binary op's operands are parsed at the next-tighter level.",
+        "inputs": "an expression token sequence.",
+        "outputs": "its parse tree consistent with the precedence order.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "bitwise-vs-relational": {
+        "kind": "definition",
+        "statement": "Bitwise operators bind tighter than comparisons: `a & b == 0` parses as `(a & b) == 0`.",
+        "formal": "`&`(prec) > `==`(prec), so `a & b == 0 ⇒ (a & b) == 0`.",
+        "inputs": "an expression mixing bitwise and relational operators.",
+        "outputs": "bitwise applied to its operands before the comparison.",
+        "depends_on": [
+          "lexical.precedence.order"
+        ],
+        "status": "draft"
+      }
+    },
+    "compound-assign": {
+      "set": {
+        "kind": "definition",
+        "statement": "The compound assignment operators are `+= -= *= /= %= &= |= ^=`.",
+        "formal": "`CMP = {+=, -=, *=, /=, %=, &=, |=, ^=}`.",
+        "inputs": "a token.",
+        "outputs": "membership in `CMP`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "semantics": {
+        "kind": "definition",
+        "statement": "Each compound assignment `x op= rhs` means `x = x op rhs` (semantic desugaring) and, like `=`, is a statement; `x` is evaluated once — its address is computed once and its value read once, then written.",
+        "formal": "`x op= rhs ⇒ x = x op rhs` (semantic, not textual); `x` is evaluated once (address + read once, then one write). Result category = statement.",
+        "inputs": "a compound-assignment expression.",
+        "outputs": "the desugared assignment with `x` evaluated once; no value produced.",
+        "depends_on": [
+          "lexical.compound-assign.set"
+        ],
+        "notes": "textual desugaring (two evaluations of `x`) is rejected as dangerous and hard to reason about; `a[i()] += 1` calls `i()` once.",
+        "status": "decided"
+      }
+    }
+  },
+  "type": {
+    "primitive": {
+      "set": {
+        "kind": "definition",
+        "statement": "The primitive types are exactly `bool i8 i16 i32 i64 u8 u16 u32 u64 usz isz f32 f64 byte`.",
+        "formal": "`PT = {bool, i8, i16, i32, i64, u8, u16, u32, u64, usz, isz, f32, f64, byte}`.",
+        "inputs": "a type name.",
+        "outputs": "membership in `PT`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "size-align": {
+        "kind": "definition",
+        "statement": "Primitive sizes and alignments, in bytes: `i8`/`u8`/`byte`/`bool` = 1; `i16`/`u16` = 2; `i32`/`u32`/`f32` = 4; `i64`/`u64`/`f64` = 8; `usz`/`isz` = the target's native word size (8 on the 64-bit baseline). A primitive's alignment equals its size.",
+        "formal": "`size(T) = align(T)` for `T ∈ PT`, with the table: `{1: i8,u8,byte,bool; 2: i16,u16; 4: i32,u32,f32; 8: i64,u64,f64,usz,isz}`.",
+        "inputs": "a primitive type `T`.",
+        "outputs": "`size(T) = align(T)` per the table.",
+        "depends_on": [
+          "type.primitive.set"
+        ],
+        "status": "decided"
+      }
+    },
+    "no-implicit-conversion": {
+      "kind": "guarantee",
+      "statement": "No primitive type converts to another implicitly.",
+      "formal": "For `e : T` used where `S` is expected and `T ≠ S`, the program is rejected unless an explicit `as` is present.",
+      "inputs": "an expression of primitive type `T` in a position expecting `S ≠ T`.",
+      "outputs": "no implicit conversion is applied; the compiler never inserts one.",
+      "depends_on": [
+        "type.primitive.set"
+      ],
+      "status": "draft"
+    },
+    "bool": {
+      "ops": {
+        "kind": "definition",
+        "statement": "`bool` supports logical (`&& || !`) and comparison (`== != < <= > >=`) operators, and no arithmetic.",
+        "formal": "ops(bool) = {`&&`,`||`,`!`,`==`,`!=`,`<`,`<=`,`>`,`>=`}; arithmetic ops ⇒ `err`.",
+        "inputs": "an operator applied to `bool` operands.",
+        "outputs": "allowed iff in the set; else `err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "representation": {
+        "kind": "definition",
+        "statement": "`bool` has a canonical representation: `false` = `0x00` and `true` = `0x01`; reading a `bool` holding any other bit pattern is undefined behavior.",
+        "formal": "`false ≡ 0x00`, `true ≡ 0x01`; a `bool` load whose byte is not `0x00`/`0x01` ⇒ `unspecified`.",
+        "inputs": "a `bool` value or an `undefined`-init `bool` read.",
+        "outputs": "`false`/`true` for canonical values; `unspecified` for a non-canonical byte.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "integer": {
+      "ops": {
+        "kind": "definition",
+        "statement": "All integer types (`i*`, `u*`, `isz`, `usz`) support the full arithmetic set, including shifts `<<`/`>>`.",
+        "formal": "ops(int) = {`+ - * / % & | ^ ~ << >> == != < <= > >=`} (arithmetic, bitwise, shifts, comparison).",
+        "inputs": "an operator applied to integer operands.",
+        "outputs": "the corresponding integer operation.",
+        "depends_on": [],
+        "notes": "shift semantics and out-of-range behavior are `expression.shift`, `expression.shift.constant-out-of-bounds`, `expression.shift.out-of-bounds`.",
+        "status": "decided"
+      },
+      "overflow": {
+        "kind": "guarantee",
+        "statement": "Integer arithmetic wraps on overflow (two's complement); overflow is neither an error nor undefined behavior.",
+        "formal": "`a ⊕ b ≡ (a ⊕ b) mod 2^N` (for width N), i.e. two's-complement wrap, for all integer ops.",
+        "inputs": "an integer operation whose mathematical result exceeds the width.",
+        "outputs": "the wrapped result, deterministically.",
+        "depends_on": [
+          "type.primitive.size-align"
+        ],
+        "status": "draft"
+      },
+      "division-modulo-by-zero": {
+        "kind": "footgun.ub",
+        "statement": "Division and modulo by zero are undefined behavior; no check is emitted.",
+        "formal": "`x / 0`, `x % 0 ⇒ unspecified`.",
+        "inputs": "integer division or modulo with zero divisor.",
+        "outputs": "`unspecified`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "signed-division-truncate": {
+        "kind": "definition",
+        "statement": "Signed division and modulo truncate toward zero: `-7 / 2 == -3`, `-7 % 2 == -1`.",
+        "formal": "`a / b = trunc(a / b)`; `a % b = a − trunc(a / b)·b` (sign of result follows `a`).",
+        "inputs": "signed integer division or modulo with nonzero divisor.",
+        "outputs": "the truncation-toward-zero result.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "signed-division-overflow": {
+        "kind": "footgun.ub",
+        "statement": "The `INT_MIN / -1` and `INT_MIN % -1` overflow cases are undefined behavior, matching C.",
+        "formal": "`INT_MIN / -1 ⇒ unspecified`; `INT_MIN % -1 ⇒ unspecified`.",
+        "inputs": "signed division/modulo of the minimum value by −1.",
+        "outputs": "`unspecified`.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "float": {
+      "ops": {
+        "kind": "definition",
+        "statement": "`f32`/`f64` support the full arithmetic set except `%`.",
+        "formal": "ops(float) = full arithmetic ∖ {`%`}.",
+        "inputs": "an operator applied to float operands.",
+        "outputs": "allowed iff not `%`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "ieee": {
+        "kind": "guarantee",
+        "statement": "Floating-point arithmetic is fully IEEE 754 conformant: round-half-to-even, no FMA contraction, subnormals supported (no flush-to-zero), quiet NaN propagation, and no fast-math relaxations.",
+        "formal": "each float operation is independently rounded to nearest with ties-to-even (IEEE 754 default); no `fast-math`, no FMA contraction; subnormals preserved; NaN is quiet-propagating.",
+        "inputs": "a float operation.",
+        "outputs": "the IEEE 754 correctly-rounded result, with no contraction or flush.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "nan": {
+        "kind": "definition",
+        "statement": "NaN compares unequal to everything, including itself: `NaN == NaN` is `false`.",
+        "formal": "for NaN `q`: `q == v` is `false` ∀v (including `v = q`); `q != v` is `true`.",
+        "inputs": "a comparison involving NaN.",
+        "outputs": "`false` for `==`, `true` for `!=`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "nan-order": {
+        "kind": "definition",
+        "statement": "NaN is *unordered* in ordering comparisons per IEEE 754: `<`, `<=`, `>`, `>=` with any NaN operand all evaluate to `false`.",
+        "formal": "for NaN `q`: `q < x`, `q <= x`, `q > x`, `q >= x`, `x < q`, `x <= q`, `x > q`, `x >= q` ⇒ `false` for all `x`.",
+        "inputs": "an ordering comparison involving NaN.",
+        "outputs": "`false`.",
+        "depends_on": [
+          "type.float.nan"
+        ],
+        "status": "decided"
+      },
+      "nan-test": {
+        "kind": "definition",
+        "statement": "`x != x` (equivalently `!(x == x)`) is the canonical NaN test: it is `true` iff `x` is NaN. `x == x` is `true` iff `x` is not NaN (a real number).",
+        "formal": "`x != x ⇔ x is NaN`; `x == x ⇔ x is not NaN`.",
+        "inputs": "a self-comparison `x != x` / `x == x`.",
+        "outputs": "`true` iff NaN (for `!=`) / not-NaN (for `==`).",
+        "depends_on": [
+          "type.float.nan"
+        ],
+        "status": "decided"
+      },
+      "special-arith": {
+        "kind": "definition",
+        "statement": "Arithmetic on the special values `±inf` and NaN follows IEEE 754, stated explicitly: `+inf + +inf = +inf`; `+inf + -inf = NaN`; `inf - inf = NaN`; `±inf * 0 = NaN`; `±inf * ±x = ±inf` for `x ≠ 0`; `x / ±inf = ±0` for finite `x`; `±inf / ±inf = NaN`; `±inf / ±x = ±inf` for finite `x`; and any operation with a NaN operand yields NaN.",
+        "formal": "the enumerated IEEE special-value results above; signs combine per IEEE (sign of a product/quotient is the xor of operand signs).",
+        "inputs": "a float `+`/`-`/`*`/`/` with `±inf` or NaN operands.",
+        "outputs": "the IEEE-defined result (`±inf`, `±0`, or NaN).",
+        "depends_on": [
+          "type.float.ieee",
+          "type.float.division-by-zero"
+        ],
+        "status": "decided"
+      },
+      "nan-kind": {
+        "kind": "definition",
+        "statement": "Spite produces and propagates quiet NaN only; signaling NaN is not a language concept, and the NaN payload (mantissa bits) is unspecified.",
+        "formal": "every NaN-producing operation yields qNaN; no operation produces sNaN; the NaN payload bits are `unspecified`.",
+        "inputs": "any float operation that yields NaN.",
+        "outputs": "a quiet NaN with an unspecified payload.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "status": "decided"
+      },
+      "no-flags": {
+        "kind": "definition",
+        "statement": "Float operations raise no traps and maintain no sticky exception flags; the resulting value is the complete observable effect.",
+        "formal": "an FP operation's only observable effect is its result value (`±inf`/NaN/subnormal); no exception trap or flag is produced or exposed.",
+        "inputs": "any float operation.",
+        "outputs": "the IEEE value, with no trap or flag side effect.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "status": "decided"
+      },
+      "signed-zero": {
+        "kind": "definition",
+        "statement": "Signed zero follows IEEE 754: `-0.0 == 0.0` is `true`, and `-0.0` is distinguishable (e.g. `1.0 / -0.0` is `-inf`; the sign is observable).",
+        "formal": "`-0.0 == 0.0 ⇒ true`; `1.0 / -0.0 ⇒ -inf`, `1.0 / 0.0 ⇒ +inf`; sign observable via division/`copysign`.",
+        "inputs": "float values involving −0.0.",
+        "outputs": "IEEE 754 signed-zero semantics.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "status": "decided"
+      },
+      "division-by-zero": {
+        "kind": "definition",
+        "statement": "Float division by zero follows IEEE 754: `x / 0.0` yields `±inf` (sign per operands) and `0.0 / 0.0` yields NaN; it is defined behavior, not UB.",
+        "formal": "`x / ±0.0 ⇒ ±inf` (sign = sign(x) ⊕ sign(0.0)); `0.0 / 0.0 ⇒ NaN`; never `unspecified`.",
+        "inputs": "a float division with a zero divisor.",
+        "outputs": "`±inf` or NaN per IEEE 754.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "status": "decided"
+      },
+      "modulo": {
+        "kind": "constraint",
+        "statement": "`%` is defined on integer operands only; `f32 % f32` and `f64 % f64` are compile errors.",
+        "formal": "`a % b` valid iff `type(a), type(b)` are integers; float operands ⇒ `err`.",
+        "inputs": "a `%` expression.",
+        "outputs": "`err` if either operand is float.",
+        "depends_on": [
+          "type.float.ops"
+        ],
+        "status": "draft"
+      }
+    },
+    "byte": {
+      "domain": {
+        "kind": "definition",
+        "statement": "`byte` is one unit of opaque, unmarked data over the full 0–255 range — not a number and not necessarily text.",
+        "formal": "`byte ∈ {0,…,255}`; no numeric interpretation is implied.",
+        "inputs": "a `byte` value.",
+        "outputs": "a value in `[0,255]` with no numeric semantics beyond ordering/equality.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "ops": {
+        "kind": "definition",
+        "statement": "`byte` supports equality/ordering (`== != < <= > >=`) and bitwise (`& | ^ ~`), and no arithmetic or shifts (shifts are integer-only). Ordering compares the byte's 8-bit value as an unsigned integer in `0..=255`; equality is bitwise.",
+        "formal": "ops(byte) = {`==`,`!=`,`<`,`<=`,`>`,`>=`,`&`,`|`,`^`,`~`}; `+ - * / % << >>` ⇒ `err`. `a < b ⇔ val(a) < val(b)` where `val : byte → [0,255]` is the unsigned value; `a == b ⇔ val(a) = val(b)`.",
+        "inputs": "an operator applied to `byte` operands.",
+        "outputs": "allowed iff in the set; ordering/equality per unsigned `0..=255` value.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "literal": {
+        "escapes": {
+          "kind": "definition",
+          "statement": "A `byte` literal supports the escapes `\\0 \\n \\r \\t \\\\ \\\" \\'` (all ASCII control/quote characters).",
+          "formal": "escapes(byte) = {`\\0`→0x00, `\\n`→0x0A, `\\r`→0x0D, `\\t`→0x09, `\\\\`→0x5C, `\\\"`→0x22, `\\'`→0x27}.",
+          "inputs": "a `byte` literal.",
+          "outputs": "its byte value after escape resolution.",
+          "depends_on": [],
+          "status": "decided"
+        },
+        "ascii": {
+          "kind": "constraint",
+          "statement": "The non-escaped `'x'` form is a single 1-byte codepoint — ASCII (0–127); a multi-byte codepoint like `'é'` is a compile error.",
+          "formal": "`'c'` (unescaped) valid iff `0x00 ≤ c ≤ 0x7F`, else `err`. Above-ASCII bytes are written as `0bXXXXXXXX` bit patterns.",
+          "inputs": "a `byte` literal using the non-escaped form.",
+          "outputs": "`err` if the source character is not ASCII.",
+          "depends_on": [
+            "type.byte.literal.escapes"
+          ],
+          "status": "draft"
+        },
+        "bits": {
+          "kind": "definition",
+          "statement": "A `byte` may be initialized from a binary `0bXXXXXXXX` or hex `0xNN` integer literal (a raw bit pattern), via context typing; the value must fit in 0–255.",
+          "formal": "`let b: byte = 0bXXXXXXXX` / `0xNN` ⇒ `b = ⟦lit⟧` (context-typed to `byte`); the value must be in `[0, 255]`, else `err`.",
+          "inputs": "a binary/hex literal in a `byte` context.",
+          "outputs": "the byte with that bit pattern.",
+          "depends_on": [
+            "type.byte.domain",
+            "type.context.positions"
+          ],
+          "status": "decided"
+        }
+      }
+    },
+    "context": {
+      "positions": {
+        "kind": "definition",
+        "statement": "The positions that establish an expected (context) type are exactly: a binding's type annotation, a parameter's type, a return type, a struct field's type, an array element type, a match/switch arm's unified result type, a subscript index (`usz`), and a range endpoint (`usz`). The target of `as` is *not* a context position.",
+        "formal": "`ctx_positions = { binding, parameter, return, struct-field, array-element, match/switch-arm, subscript-index(usz), range-endpoint(usz) }`; `as`-target ∉ `ctx_positions`.",
+        "inputs": "a syntactic site carrying a type expectation.",
+        "outputs": "whether that site is a context position.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "propagation": {
+        "kind": "definition",
+        "statement": "A context type propagates bidirectionally into the entire expression occupying the position, including its subexpressions (literals and operator operands); the scope is tightly bounded to that expression and does not extend beyond it.",
+        "formal": "if `E` occupies a context position of type `T`, then `E` and all its subexpressions are checked against `T`. E.g. `let d: u8 = 1 + 2` types `1`, `2`, and `+` as `u8`.",
+        "inputs": "a context position of type `T` and the expression `E` in it.",
+        "outputs": "`E` and its subexpressions typed against `T`.",
+        "depends_on": [
+          "type.context.positions"
+        ],
+        "status": "decided"
+      },
+      "conflict": {
+        "kind": "constraint",
+        "statement": "When two subexpressions carry incompatible types in a position requiring one type (e.g. binary operator operands of different types) and no coercion applies, it is a compile error; the compiler never auto-resolves the conflict.",
+        "formal": "`a ⊕ b` with `type(a) ≠ type(b)` and no coercible direction ⇒ `err`.",
+        "inputs": "a binary operator (or analogous position) with two differently-typed operands.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "type.no-implicit-conversion"
+        ],
+        "status": "decided"
+      }
+    }
+  },
+  "expression": {
+    "cast": {
+      "converts": {
+        "kind": "definition",
+        "statement": "`as` converts between primitive types in either direction (widening or narrowing).",
+        "formal": "`x as T` valid for `type(x) ∈ PT`, `T ∈ PT`, `type(x) ≠ T` (subject to the exclusions in `expression.cast.no-struct`/`no-reinterpret`/`bool`); yields a value of type `T`.",
+        "inputs": "`x as T` with primitive source and target.",
+        "outputs": "a value of type `T`, per `expression.cast.float-integer` (float↔int) and other `expression.cast.*` rules.",
+        "depends_on": [
+          "expression.cast.float-integer",
+          "expression.cast.narrow-warning"
+        ],
+        "status": "decided"
+      },
+      "narrow-warning": {
+        "kind": "constraint",
+        "statement": "A lossy cast — one whose target type cannot represent every value of the source type — produces a compiler warning.",
+        "formal": "`warn(x as T) ⇔ lossy(type(x), T)`, where `lossy(S, T) ⇔ ∃ v ∈ S: (v as T) as S ≠ v`. Lossy cases: width-shrink (any sign), signed↔unsigned same-width, int→float (precision), float→int (truncation). Non-lossy: widening int/float, `byte`↔`u8`.",
+        "inputs": "`x as T`.",
+        "outputs": "a warning diagnostic (not an error) iff the cast is lossy.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "no-struct": {
+        "kind": "constraint",
+        "statement": "`as` does not apply to structs; there is no struct-to-struct conversion.",
+        "formal": "`x as T` with `type(x)` or `T` a struct ⇒ `err`.",
+        "inputs": "a cast involving a struct type.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "no-reinterpret": {
+        "kind": "constraint",
+        "statement": "Bit-level reinterpretation (e.g. `f32` raw bits as `u32`) and extracting an enum variant's tag are not part of `as`.",
+        "formal": "reinterpretation/tag-extraction have no `as` form; attempting them ⇒ `err` (no such operation in this phase).",
+        "inputs": "an attempt to reinterpret bits or extract a tag via `as`.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "bool": {
+        "kind": "constraint",
+        "statement": "`as` to or from `bool` is a compile error.",
+        "formal": "`x as bool` or `bool as T` ⇒ `err`.",
+        "inputs": "a cast with `bool` as source or target.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "byte-u8": {
+        "kind": "definition",
+        "statement": "`as` between `byte` and `u8` is allowed in either direction.",
+        "formal": "`byte as u8` and `u8 as byte` are valid; value preserved (both are 0–255).",
+        "inputs": "`byte as u8` or `u8 as byte`.",
+        "outputs": "the value, unchanged, retyped.",
+        "depends_on": [
+          "type.byte.domain"
+        ],
+        "status": "draft"
+      },
+      "float-integer": {
+        "kind": "definition",
+        "statement": "int→float rounds to nearest (ties-to-even, IEEE-conformant); float→int truncates toward zero; a float→int cast whose source is NaN or out of the target's range yields `0`.",
+        "formal": "`i as f = round_nearest_even(f, i)`; `f as i = trunc_toward_zero(f)` when `f` is finite and `trunc_toward_zero(f) ∈ [min(i), max(i)]`, else `0`; `NaN as i = 0`; `±inf as i = 0`.",
+        "inputs": "`f as i*` or `i* as f`.",
+        "outputs": "the converted value; `0` for NaN/±inf/out-of-range float→int.",
+        "depends_on": [
+          "type.float.ieee"
+        ],
+        "notes": "out-of-range/NaN → `0` is deliberate (the \"closest concept to unspecified\" on an integer); it is fully deterministic, not UB.",
+        "status": "decided"
+      },
+      "operand-typing": {
+        "kind": "definition",
+        "statement": "The operand of `as` is typed independently of the cast target; a literal operand takes its default width (`i32`/`f32`), and the cast then converts that value to the target type.",
+        "formal": "`E as T` ⇒ first resolve `type(E)` (a literal ⇒ default `i32`/`f32`, never `T`), then convert the value to `T`. `300 as u8` ⇒ `300 : i32` truncated to `u8`.",
+        "inputs": "an `as` expression.",
+        "outputs": "the operand typed independently, then converted to the target.",
+        "depends_on": [
+          "expression.cast.converts"
+        ],
+        "status": "decided"
+      }
+    },
+    "constant-expression": {
+      "kind": "definition",
+      "statement": "A compile-time constant expression is a closed expression over literals (int/float/byte) and the operators applicable to those literal types, constant-folded; it contains no function calls and no reads of non-literal bindings.",
+      "formal": "`const-expr ::= literal | unop const-expr | const-expr binop const-expr`, where `unop`/`binop` are the operators defined for the literal's type; no `fn` calls, no binding references. Folded to a value at compile time.",
+      "inputs": "an expression.",
+      "outputs": "whether it is a constant; if so, its folded value.",
+      "depends_on": [],
+      "notes": "a future `const`/comptime facility (not yet in the reference) may extend this domain; the reference currently has no `const` keyword or const-bindings.",
+      "status": "decided"
+    },
+    "eval-order": {
+      "kind": "definition",
+      "statement": "Sub-expressions are evaluated in source order, left-to-right: binary operands, function arguments, and subscript base-then-index all evaluate deterministically left-to-right.",
+      "formal": "for `E₁ ⊕ E₂`, `⟦E₁⟧` evaluates before `⟦E₂⟧`; for `f(a₁,…,aₙ)`, `aᵢ` evaluates before `aᵢ₊₁`; for `a[i]`, `a` evaluates before `i`.",
+      "inputs": "an expression with multiple sub-expressions.",
+      "outputs": "deterministic left-to-right evaluation.",
+      "depends_on": [],
+      "notes": "deliberately not C's \"unspecified\" order; source order is the defined evaluation order.",
+      "status": "decided"
+    },
+    "short-circuit": {
+      "kind": "definition",
+      "statement": "`&&` and `||` short-circuit: the right operand is evaluated only if the left operand does not already determine the result.",
+      "formal": "`a && b` evaluates `b` only if `⟦a⟧ = true`; `a || b` evaluates `b` only if `⟦a⟧ = false`; otherwise `b` is not evaluated.",
+      "inputs": "a `&&`/`||` expression.",
+      "outputs": "short-circuit evaluation.",
+      "depends_on": [
+        "type.bool.ops"
+      ],
+      "status": "decided"
+    },
+    "assign": {
+      "target-lvalue": {
+        "kind": "constraint",
+        "statement": "The target of `=` and compound assignment must be an l-value — a binding, `*r`, `s.f`, or `a[i]`; assigning to a literal, a call result, or any r-value is a compile error.",
+        "formal": "`lhs = rhs` / `lhs op= rhs` valid iff `lhs` is an l-value; else `err`.",
+        "inputs": "an assignment target.",
+        "outputs": "`err` if the target is not an l-value.",
+        "depends_on": [
+          "variable.binding.field-write",
+          "reference.deref.write-requires-mutable"
+        ],
+        "status": "decided"
+      }
+    },
+    "shift": {
+      "kind": "definition",
+      "statement": "`x << n` shifts `x` left `n` bits (zero-fill). `x >> n` shifts `x` right `n` bits: arithmetic (sign-extending) for a signed integer (`i*`, `isz`), logical (zero-fill) for an unsigned integer (`u*`, `usz`).",
+      "formal": "`<<` zero-fills on the right; `>>` sign-fills on the left when `type(x)` is signed, zero-fills when unsigned.",
+      "inputs": "a shift expression `x << n` / `x >> n`.",
+      "outputs": "the shifted value.",
+      "depends_on": [
+        "type.integer.ops"
+      ],
+      "status": "decided",
+      "constant-out-of-bounds": {
+        "kind": "constraint",
+        "statement": "A shift by a compile-time constant amount that is negative or ≥ the operand's bit width is a compile error.",
+        "formal": "`x << n` / `x >> n` where `n` is a constant expression (`expression.constant-expression`) and `n < 0` or `n ≥ width(type(x))` ⇒ `err`.",
+        "inputs": "a shift with a constant out-of-range amount.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "expression.constant-expression",
+          "expression.shift"
+        ],
+        "status": "decided"
+      },
+      "out-of-bounds": {
+        "kind": "footgun.ub",
+        "statement": "A shift by a runtime amount that is negative or ≥ the operand's bit width is undefined behavior; no check is emitted.",
+        "formal": "`x << n` / `x >> n` where `n` is a runtime value and `n < 0` or `n ≥ width(type(x))` ⇒ `unspecified`.",
+        "inputs": "a shift with a runtime out-of-range amount.",
+        "outputs": "`unspecified`.",
+        "depends_on": [
+          "expression.shift"
+        ],
+        "status": "decided"
+      }
+    }
+  },
+  "variable": {
+    "binding": {
+      "let": {
+        "kind": "definition",
+        "statement": "`let` declares a constant l-value: the binding cannot be reassigned after initialization.",
+        "formal": "`let x: T …` ⇒ `x` is an l-value of type `T`; `x = …` after init ⇒ `err`.",
+        "inputs": "a `let` binding and any subsequent reassignment.",
+        "outputs": "the binding is immutable; reassignment is `err`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "mutable": {
+        "kind": "definition",
+        "statement": "`mut` declares a mutable l-value: the binding can be reassigned, and its value and fields/elements are writable.",
+        "formal": "`mut x: T …` ⇒ `x` is a reassignable l-value of type `T`; field/element writes are permitted.",
+        "inputs": "a `mut` binding.",
+        "outputs": "reassignment and field/element writes are permitted.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "field-write": {
+        "kind": "constraint",
+        "statement": "A binding's mutability is transitive (deep) over a value type: writing a field of a struct value or an element of an array value through a `let` binding (`s.f = v`, `a[i] = v`, and their compound-assign forms) is a compile error. View types (references, slices) are unaffected — their writability is carried by the view type, not the binding (§3.2, §4.2).",
+        "formal": "for a value-type binding `s`/`a`, `s.f = v` / `a[i] = v` valid iff `binding(s)`/`binding(a)` = `mut`, else `err`.",
+        "inputs": "a field/element write through a value-type binding.",
+        "outputs": "`err` if the enclosing binding is not `mut`.",
+        "depends_on": [
+          "variable.binding.let",
+          "variable.binding.mutable"
+        ],
+        "status": "decided"
+      },
+      "no-type-no-initialization": {
+        "kind": "constraint",
+        "statement": "A binding must have either a type annotation or an initializer (from which the type is inferred); a binding with neither is a compile error.",
+        "formal": "`let x;` / `mut x;` with no type annotation and no initializer ⇒ `err`.",
+        "inputs": "a binding with no type and no initializer.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "scope": {
+      "block": {
+        "kind": "definition",
+        "statement": "Bindings are scoped to their enclosing block.",
+        "formal": "a binding is visible from its declaration to the end of the innermost enclosing `{ }`; not outside it.",
+        "inputs": "a binding and a use.",
+        "outputs": "whether the use is in scope.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "shadow": {
+        "kind": "definition",
+        "statement": "An inner binding may shadow an outer binding of the same name.",
+        "formal": "a name bound in an inner scope hides the outer binding within that inner scope; resolution inside the inner scope finds the innermost binding.",
+        "inputs": "two bindings of the same name in nested scopes.",
+        "outputs": "the inner binding is resolved within its scope.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "redeclaration": {
+        "kind": "constraint",
+        "statement": "A name may be bound at most once per scope; redeclaring the same name in the same block is a compile error. Only a nested scope may shadow.",
+        "formal": "two bindings of the same name in the same scope ⇒ `err`; shadowing is legal only across a scope boundary (a nested block).",
+        "inputs": "two same-name bindings in one scope.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "variable.scope.shadow"
+        ],
+        "status": "decided"
+      }
+    },
+    "initialization": {
+      "form": {
+        "defaulted": {
+          "kind": "definition",
+          "statement": "`let t: Transform;` (no initializer) is default-initialization.",
+          "formal": "binding with a type and no initializer ⇒ form (a).",
+          "inputs": "a binding with type, no initializer.",
+          "outputs": "form (a) initialization per `variable.initialization.defaulted.semantics`.",
+          "depends_on": [
+            "variable.initialization.defaulted.semantics"
+          ],
+          "status": "draft"
+        },
+        "undefined": {
+          "kind": "definition",
+          "statement": "`= undefined` explicitly leaves the value uninitialized.",
+          "formal": "`= undefined` ⇒ form (b); legal only for value types (see `variable.initialization.undefined.value-type`).",
+          "inputs": "a binding initialized with `undefined`.",
+          "outputs": "form (b) initialization.",
+          "depends_on": [
+            "variable.initialization.undefined.value-type"
+          ],
+          "status": "draft"
+        },
+        "brace": {
+          "kind": "definition",
+          "statement": "`= T{ .field = v, … }` brace-initializes a value, listing a subset of fields.",
+          "formal": "`= T{ .fᵢ = vᵢ }` ⇒ form (c).",
+          "inputs": "a brace-initializer.",
+          "outputs": "form (c) initialization per `variable.initialization.brace.semantics`.",
+          "depends_on": [
+            "variable.initialization.brace.semantics"
+          ],
+          "status": "draft"
+        }
+      },
+      "defaulted": {
+        "semantics": {
+          "kind": "definition",
+          "statement": "Default-initialization sets each field to its declared default where one exists, else to the all-zero-bits value of its type (recursively).",
+          "formal": "`init(x) = ⟨ default(f) if declared, else zero(type(f)) ⟩` over every field/element. `zero(i*/u*) = 0`; `zero(bool) = false` (0x00); `zero(f*) = +0.0`; `zero(byte) = 0x00`; `zero(T[n])` = each element `zero(T)`; `zero(S)` = each field recursively.",
+          "inputs": "a defaulted binding.",
+          "outputs": "the value with each field defaulted or all-zero-bits.",
+          "depends_on": [],
+          "status": "decided"
+        }
+      },
+      "undefined": {
+        "semantics": {
+          "kind": "definition",
+          "statement": "`undefined` leaves the value as garbage — whatever bits were already there.",
+          "formal": "`undefined` ⇒ no store; the value is the prior contents of the storage.",
+          "inputs": "an `undefined`-initialized value type.",
+          "outputs": "indeterminate (garbage) bits.",
+          "depends_on": [],
+          "status": "draft"
+        },
+        "value-type": {
+          "kind": "constraint",
+          "statement": "`undefined` is legal only for a value type — a type whose layout, transitively, contains no reference and no slice.",
+          "formal": "`undefined` valid iff `is_value_type(T)`, where `is_value_type(T) = ¬ contains_ref_or_slice(T)` (transitive over fields and array elements).",
+          "inputs": "a binding initialized with `undefined`.",
+          "outputs": "`err` if `T` transitively contains a reference or slice.",
+          "depends_on": [],
+          "status": "draft"
+        }
+      },
+      "brace": {
+        "semantics": {
+          "kind": "definition",
+          "statement": "Brace-init zeroes/applies defaults to all fields except those explicitly listed, which take the given values.",
+          "formal": "`T{ .fᵢ = vᵢ }` ⇒ `fᵢ = vᵢ` for listed fields; all other fields = `default`/`zero` as in `variable.initialization.defaulted.semantics`.",
+          "inputs": "a brace-initializer.",
+          "outputs": "listed fields set; unlisted fields zeroed/defaulted.",
+          "depends_on": [
+            "variable.initialization.defaulted.semantics"
+          ],
+          "status": "draft"
+        }
+      },
+      "reference-field": {
+        "kind": "constraint",
+        "statement": "A struct with a reference-typed field cannot use form (a); form (c) must supply every reference field explicitly.",
+        "formal": "if `∃ f ∈ fields(S): type(f) ∈ ref`, then form (a) ⇒ `err`; form (c) must list every such `f`.",
+        "inputs": "a defaulted or brace-init of a struct with reference fields.",
+        "outputs": "`err` for form (a); `err` for form (c) omitting a reference field.",
+        "depends_on": [
+          "reference.field.no-default"
+        ],
+        "status": "draft"
+      }
+    },
+    "type-inference": {
+      "kind": "definition",
+      "statement": "`let t = expr;` infers `t`'s type bottom-up from `expr`: `type(t) = type(expr)`, equivalent to writing the type explicitly.",
+      "formal": "`type(t) = type(expr)` computed bottom-up; a literal initializer takes its default width (`i32`/`f32`) since no annotation supplies a context. No outer expected type flows into an un-annotated initializer.",
+      "inputs": "a binding with an initializer and no type annotation.",
+      "outputs": "the binding typed as the initializer's type.",
+      "depends_on": [
+        "type.context.positions"
+      ],
+      "status": "decided"
+    }
+  },
+  "reference": {
+    "type": {
+      "representation": {
+        "kind": "definition",
+        "statement": "A reference `&T` is a non-nullable indirection to a value — one machine word (a pointer).",
+        "formal": "`size(&T) = size(&mut T) = 8` (one machine word, 64-bit); the stored value is an address.",
+        "inputs": "a reference type.",
+        "outputs": "its representation as a pointer-sized value.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "non-null": {
+        "kind": "guarantee",
+        "statement": "A `&T` is never null and is always bound to a live value at the moment it is created.",
+        "formal": "at creation, `⟦&x⟧ ≠ null` and points to a live value; no syntax produces null; `undefined` cannot initialize a reference or reference-holding value.",
+        "inputs": "the creation of a reference.",
+        "outputs": "a non-null pointer to a live value.",
+        "depends_on": [
+          "variable.initialization.undefined.value-type"
+        ],
+        "status": "draft",
+        "scope": {
+          "kind": "definition",
+          "statement": "The non-null guarantee is about creation, not the referent's lifetime: a reference may outlive its referent and dangle, which is unchecked.",
+          "formal": "the guarantee holds only at the creation site; lifetime is governed by `reference.dangling.footgun`.",
+          "inputs": "a reference after its creation.",
+          "outputs": "no lifetime guarantee is made.",
+          "depends_on": [
+            "reference.dangling.footgun"
+          ],
+          "status": "draft"
+        }
+      }
+    },
+    "syntax": {
+      "type-vs-op": {
+        "kind": "definition",
+        "statement": "`&`/`&mut` before a type form reference types; before an l-value they take an address (yielding `&T`/`&mut T`, or a slice for an array-like l-value); between two operands `&` is bitwise AND.",
+        "formal": "context-disambiguation: type position ⇒ reference type; unary on l-value ⇒ address/slice; binary ⇒ bitwise AND.",
+        "inputs": "an occurrence of `&`.",
+        "outputs": "its meaning by syntactic position.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "mutable": {
+      "split": {
+        "kind": "definition",
+        "statement": "`&T` is a read-only view; `&mut T` grants write access to the referent.",
+        "formal": "write-through via `&T` ⇒ `err`; via `&mut T` ⇒ allowed.",
+        "inputs": "a reference type and a write attempt.",
+        "outputs": "whether the write is permitted.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "take-constraint": {
+        "kind": "constraint",
+        "statement": "Taking `&mut` of a value requires that value's own binding to be `mut`; for a field or array element (a value-type sub-value), it requires the *enclosing* binding to be `mut` (`&mut s.f`, `&mut a[i]` need `s`/`a` to be `mut`). The same holds for `&mut` on an array-like l-value.",
+        "formal": "`&mut x` valid iff `binding(x) = mut`, else `err`; for a value-type field/element, `&mut s.f` / `&mut a[i]` valid iff `binding(s)`/`binding(a)` = `mut`, else `err`.",
+        "inputs": "a `&mut`-taking of an l-value (binding, field, or element).",
+        "outputs": "`err` if the owning binding is not `mut`.",
+        "depends_on": [
+          "variable.binding.mutable"
+        ],
+        "status": "decided"
+      }
+    },
+    "address-of": {
+      "lvalue": {
+        "kind": "constraint",
+        "statement": "`&e` / `&mut e` requires `e` to be an l-value; taking the address of a temporary, a literal, or a call result is a compile error.",
+        "formal": "`&e`/`&mut e` valid iff `e` is an l-value (a binding, or a dereference/projection naming storage); else `err`. `&(x+1)`, `&10`, `&foo()` ⇒ `err`.",
+        "inputs": "an address-of of an expression.",
+        "outputs": "`err` if `e` is not an l-value.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "deref": {
+      "explicit": {
+        "kind": "definition",
+        "statement": "Access through a reference is explicit: `*` dereferences to the whole referent; `->` dereferences for member access.",
+        "formal": "`*r` ⇒ the referent as an l-value; `r->f` ⇒ `(*r).f`.",
+        "inputs": "a reference and a dereference/arrow expression.",
+        "outputs": "the referent l-value / member.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "write-requires-mutable": {
+        "kind": "constraint",
+        "statement": "Writing through `*` requires `&mut`; `*` on a `&T` reads but cannot write.",
+        "formal": "`*r = v` valid iff `r : &mut T`; `r : &T` ⇒ `err`.",
+        "inputs": "a write through a dereference.",
+        "outputs": "`err` if `r` is `&T`.",
+        "depends_on": [
+          "reference.mutable.split"
+        ],
+        "status": "draft"
+      }
+    },
+    "assign": {
+      "rebind": {
+        "kind": "definition",
+        "statement": "`=` on a reference variable rebinds it to a new address; it never writes through.",
+        "formal": "`r = e` (where `r : &T`/`&mut T`) assigns `e`'s address to `r`; the referent is unaffected.",
+        "inputs": "an assignment to a reference variable.",
+        "outputs": "the reference now holds `e`'s address.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "statement": {
+        "kind": "constraint",
+        "statement": "`=` is a statement, not an expression: it produces no value and may not appear where a value is expected.",
+        "formal": "`=` yields no value; result category = statement.",
+        "inputs": "an assignment.",
+        "outputs": "no value produced.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "type-match": {
+        "kind": "constraint",
+        "statement": "The right-hand side of a rebind must match the reference's type and mutability: a `&mut u64` is assigned a `&mut u64`, never a `&u64`.",
+        "formal": "`r = e` valid iff `type(e) = type(r)` (including mutability); `&u64 → &mut u64` ⇒ `err`.",
+        "inputs": "a rebind.",
+        "outputs": "`err` if type/mutability mismatch.",
+        "depends_on": [
+          "reference.mutable.split"
+        ],
+        "status": "draft"
+      }
+    },
+    "member": {
+      "dot": {
+        "kind": "definition",
+        "statement": "`.` accesses a member at the receiver's own indirection level.",
+        "formal": "`r.f` on a reference projects the reference to the field (a reference of the same mutability); `p.f` on a value gives the member l-value.",
+        "inputs": "a `.` member access.",
+        "outputs": "a field reference (on a reference) or field l-value (on a value).",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "arrow": {
+        "kind": "definition",
+        "statement": "`->` dereferences one level and then accesses the member; it is meaningful only on a reference and always gives the member value.",
+        "formal": "`r->f ≡ (*r).f`; valid iff `r` is a reference.",
+        "inputs": "a `->` member access.",
+        "outputs": "the member value after one dereference.",
+        "depends_on": [
+          "reference.deref.explicit"
+        ],
+        "status": "draft"
+      },
+      "projection": {
+        "kind": "definition",
+        "statement": "On a value, `.` gives the member value itself; on a reference, `.` gives a reference to the member of the same mutability (`r.x` on `&mut Point` is `&mut f32`).",
+        "formal": "`type(p.f) = type(f)` (l-value); `type(r.f) = &mut type(f)` if `r : &mut Point`, `& type(f)` if `r : &Point`.",
+        "inputs": "a `.` access on a value vs. a reference.",
+        "outputs": "the member value vs. the projected reference.",
+        "depends_on": [
+          "reference.member.dot"
+        ],
+        "status": "draft"
+      }
+    },
+    "compound-assign": {
+      "rebind": {
+        "kind": "constraint",
+        "statement": "Compound assignment (`+=`, …) is defined as `x = x op rhs`, so it rebinds a reference rather than writing through it; to write through, dereference first (`*d += 1`).",
+        "formal": "`d += rhs` (on `d : &T`) ⇒ `d = d + rhs` — an error, since an address has no arithmetic; `*d += rhs` writes through.",
+        "inputs": "a compound assignment to a reference.",
+        "outputs": "`err` (address arithmetic) unless dereferenced.",
+        "depends_on": [
+          "lexical.compound-assign.semantics"
+        ],
+        "status": "draft"
+      }
+    },
+    "field": {
+      "no-default": {
+        "kind": "constraint",
+        "statement": "A reference-typed field cannot declare a default value.",
+        "formal": "`f: &T = d` in a struct declaration ⇒ `err`.",
+        "inputs": "a struct field declaration with a default on a reference type.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "initialization-required": {
+        "kind": "constraint",
+        "statement": "A struct with a reference-typed field requires full brace-init supplying a real referent for each reference field; form (a) and form (b) are both errors.",
+        "formal": "for `S` with a reference field: form (a) ⇒ `err` (no default), form (b) ⇒ `err` (not a value type), form (c) must list each reference field.",
+        "inputs": "initialization of a struct with reference fields.",
+        "outputs": "`err` for forms (a)/(b); form (c) required.",
+        "depends_on": [
+          "variable.initialization.reference-field",
+          "variable.initialization.undefined.value-type"
+        ],
+        "status": "draft"
+      }
+    },
+    "disallow-double": {
+      "kind": "constraint",
+      "statement": "`&&T` is not a legal type.",
+      "formal": "a type `&(&T)` ⇒ `err`.",
+      "inputs": "a nested reference type.",
+      "outputs": "`err`.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "dangling": {
+      "return": {
+        "kind": "constraint",
+        "statement": "A function may not directly `return &local;` or `return &mut local;` where `local` is owned by that function's own stack frame.",
+        "formal": "`return &local` / `return &mut local` with `local` frame-owned ⇒ `err`.",
+        "inputs": "a return of an address-of a frame-owned local.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft",
+        "scope": {
+          "kind": "definition",
+          "statement": "The `return &local` constraint covers only frame-owned locals; returning a reference to a referent not owned by the frame (e.g. a `&mut` parameter's referent) is legal. The language currently defines no global variables, so a global referent is not a concept.",
+          "formal": "`return &x` valid iff `x` is not a frame-owned local; `return &mut *p` (referent of a parameter) ⇒ allowed; `return &mut local` (frame-owned) ⇒ `err`.",
+          "inputs": "a return of a reference.",
+          "outputs": "`err` only for a frame-owned local; otherwise allowed.",
+          "depends_on": [
+            "reference.dangling.return"
+          ],
+          "notes": "globals are deliberately absent from the language at this phase; see §5 (functions) when name-resolution scope is formalized.",
+          "status": "decided"
+        }
+      },
+      "footgun": {
+        "kind": "footgun.ub",
+        "statement": "No other dangling-reference case is checked — e.g. a local's address smuggled out inside a struct field, or a reference outliving its referent through any more indirect path.",
+        "formal": "all dangling cases other than `reference.dangling.return` are `unspecified` (unchecked).",
+        "inputs": "any indirect dangling-reference scenario.",
+        "outputs": "`unspecified` (unchecked).",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "alias": {
+      "well-defined": {
+        "kind": "guarantee",
+        "statement": "Aliasing is well-defined: the compiler makes no `noalias`/`restrict` assumption that a `&mut` is the only reference to its referent.",
+        "formal": "no `noalias`/`restrict` semantics are emitted for `&mut`.",
+        "inputs": "codegen of `&mut`.",
+        "outputs": "no exclusivity attribute emitted.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "program-order": {
+        "kind": "definition",
+        "statement": "A program's observable behavior is deterministic: operations apply in program order, whether or not two references happen to alias.",
+        "formal": "memory operations are ordered as written (no reordering that changes observable behavior); aliasing does not make behavior nondeterministic.",
+        "inputs": "aliasing references.",
+        "outputs": "deterministic, program-ordered results.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "no-exclusivity": {
+        "kind": "footgun.defined",
+        "statement": "Nothing enforces exclusivity: two `&mut` to the same memory, or a `&T` and a `&mut` to the same memory, are both legal; the result is deterministic but almost-certainly-unintended.",
+        "formal": "`&T` forbids writes *through that reference*, not writes by another coexisting `&mut`; the latter is accepted and deterministic.",
+        "inputs": "coexisting references to one referent.",
+        "outputs": "accepted; behavior per `reference.alias.program-order`.",
+        "depends_on": [
+          "reference.alias.program-order"
+        ],
+        "status": "draft"
+      }
+    }
+  },
+  "array": {
+    "type": {
+      "length-in-type": {
+        "kind": "definition",
+        "statement": "A fixed-size array's length is part of its type: `f32[3]` and `f32[4]` are distinct types.",
+        "formal": "`type(f32[3]) ≠ type(f32[4])`; `T[n]` is parameterized by `n`.",
+        "inputs": "two array types differing only in length.",
+        "outputs": "they are distinct types.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "size-align": {
+      "kind": "definition",
+      "statement": "`size(T[n]) = n · size(T)`; `align(T[n]) = align(T)`. The length `n` must be ≥ 1 (zero-length arrays are illegal).",
+      "formal": "`size(T[n]) = n · size(T)`; `align(T[n]) = align(T)`; `n ≥ 1` required, else `err`.",
+      "inputs": "an array type `T[n]`.",
+      "outputs": "its size and alignment; `err` if `n = 0`.",
+      "depends_on": [
+        "type.primitive.size-align"
+      ],
+      "status": "decided"
+    },
+    "copy-semantics": {
+      "kind": "definition",
+      "statement": "An array is a plain value type: assigning one to another, or passing it by value, copies every element.",
+      "formal": "`a = b` (arrays) copies `n` elements; pass-by-value copies the whole array.",
+      "inputs": "an array assignment or by-value pass.",
+      "outputs": "a full element-wise copy.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "index": {
+      "mechanism": {
+        "kind": "definition",
+        "statement": "`arr[index]` is a dedicated language mechanism, not sugar for pointer arithmetic; the compiler computes the element address internally, never exposed to user code.",
+        "formal": "`⟦arr[i]⟧ = base(arr) + i · size(T)` computed by the compiler; no user-visible pointer arithmetic.",
+        "inputs": "an array subscript.",
+        "outputs": "the element at the computed address.",
+        "depends_on": [
+          "array.size-align"
+        ],
+        "status": "draft"
+      },
+      "type": {
+        "kind": "constraint",
+        "statement": "A subscript index (array or slice) and a range endpoint must be `usz`; the index/endpoint position is a context position of type `usz`, so an integer literal is context-typed to `usz` and a non-`usz` integer expression is a type error.",
+        "formal": "`a[i]` / `s[i]` / `a[i..j]` valid iff `type(i) = usz` (via context typing); else `err`. Index arithmetic is `usz`.",
+        "inputs": "a subscript index or range endpoint.",
+        "outputs": "`err` unless the index/endpoint is `usz`.",
+        "depends_on": [
+          "type.context.positions"
+        ],
+        "notes": "`usz` is the native-word-size unsigned type (previously a `u64` placeholder).",
+        "status": "decided"
+      }
+    },
+    "out-of-bounds": {
+      "kind": "footgun.ub",
+      "statement": "Out-of-bounds indexing is not checked at runtime.",
+      "formal": "`arr[i]` with `i ≥ n` (or `i < 0`) ⇒ `unspecified` (no bounds check emitted).",
+      "inputs": "an out-of-bounds subscript.",
+      "outputs": "`unspecified`.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "size-builtin": {
+      "kind": "definition",
+      "statement": "`arr.size` gives the array's length as an `usz` — a compile-time constant. It is a read-only builtin, not a declarable field.",
+      "formal": "`⟦arr.size⟧ = n : usz` (constant, since `n` is part of the type); `.size` is reserved (not a field name).",
+      "inputs": "`.size` on a fixed-size array.",
+      "outputs": "the constant length `n` (typed `usz`).",
+      "depends_on": [
+        "array.type.length-in-type"
+      ],
+      "status": "decided"
+    },
+    "length": {
+      "constant-expression": {
+        "kind": "constraint",
+        "statement": "An array length must be a compile-time constant integer expression evaluating to `k ≥ 1`; a zero, negative, or non-constant (runtime) length is a compile error.",
+        "formal": "`T[n]` valid iff `n` is a constant expression per `expression.constant-expression` and `⟦n⟧ = k ≥ 1`; else `err`.",
+        "inputs": "an array-length expression.",
+        "outputs": "`err` if the length is not a constant `≥ 1`.",
+        "depends_on": [
+          "array.size-align",
+          "expression.constant-expression"
+        ],
+        "notes": "the constant-expression domain is `expression.constant-expression` (shared with struct-field defaults).",
+        "status": "decided"
+      }
+    }
+  },
+  "slice": {
+    "representation": {
+      "kind": "definition",
+      "statement": "A slice `T[]` is a non-owning, runtime-sized view — a `{ T*, usz }` pair (16 bytes on 64-bit).",
+      "formal": "`T[] ≅ struct { ptr: *T; len: usz }`; `size(T[]) = 16`, `align(T[]) = 8`.",
+      "inputs": "a slice type.",
+      "outputs": "its `{ptr, len}` representation and size/alignment.",
+      "depends_on": [],
+      "status": "decided"
+    },
+    "from-array": {
+      "kind": "definition",
+      "statement": "`&arr` on a fixed-size array produces a slice viewing all of it, reusing `&` but yielding `T[]`, not `&T`.",
+      "formal": "`&a ⇒ { ptr = &a[0], len = n } : T[]`; `&mut a ⇒ { ptr = &a[0], len = n } : mut T[]`.",
+      "inputs": "`&a` / `&mut a` on a fixed-size array.",
+      "outputs": "a slice (or writable slice) over all elements.",
+      "depends_on": [
+        "slice.representation"
+      ],
+      "status": "draft"
+    },
+    "mutable": {
+      "form": {
+        "kind": "definition",
+        "statement": "`&a` yields a read-only `T[]`; `&mut a` yields a writable `mut T[]`. Neither is address-of-taking in the reference sense.",
+        "formal": "`&a ⇒ T[]`; `&mut a ⇒ mut T[]`; no `&T`/`&mut T` is formed.",
+        "inputs": "`&a` / `&mut a` on an array.",
+        "outputs": "a `T[]` / `mut T[]` slice.",
+        "depends_on": [
+          "slice.from-array"
+        ],
+        "status": "draft"
+      },
+      "take-constraint": {
+        "kind": "constraint",
+        "statement": "`&mut a` requires `a`'s own binding to be `mut`, exactly as for a reference.",
+        "formal": "`&mut a` valid iff `binding(a) = mut`, else `err`.",
+        "inputs": "a `&mut a` on an array.",
+        "outputs": "`err` if `a` is not `mut`.",
+        "depends_on": [
+          "reference.mutable.take-constraint"
+        ],
+        "status": "draft"
+      }
+    },
+    "writability-in-type": {
+      "kind": "definition",
+      "statement": "A slice type carries its own writability: `T[]` is read-only, `mut T[]` is writable.",
+      "formal": "`T[]` ⇒ read-only; `mut T[]` ⇒ writable.",
+      "inputs": "a slice type.",
+      "outputs": "its writability.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "write-readonly": {
+      "kind": "constraint",
+      "statement": "Writing an element through a read-only view is a compile error.",
+      "formal": "`s[i] = v` with `s : T[]` ⇒ `err`.",
+      "inputs": "an element write through `T[]`.",
+      "outputs": "`err`.",
+      "depends_on": [
+        "slice.writability-in-type"
+      ],
+      "status": "draft"
+    },
+    "writability-boundary": {
+      "kind": "guarantee",
+      "statement": "Because writability is part of the type, it holds across a function boundary: a callee receiving `T[]` cannot write through it regardless of what the caller owns.",
+      "formal": "a parameter of type `T[]` admits no writes, independent of call-site ownership.",
+      "inputs": "a `T[]` parameter and a write attempt.",
+      "outputs": "`err` at the callee.",
+      "depends_on": [
+        "slice.writability-in-type"
+      ],
+      "status": "draft"
+    },
+    "rebind": {
+      "kind": "definition",
+      "statement": "`=` on a slice rebinds it (reassigns the `{ptr, len}`), the same way it rebinds any value; binding mutability governs reassignment, not element writability.",
+      "formal": "`s = t` (slices) reassigns `s`'s `{ptr, len}`; allowed iff `binding(s) = mut`.",
+      "inputs": "an assignment to a slice binding.",
+      "outputs": "the slice now views `t`'s range.",
+      "depends_on": [
+        "reference.assign.rebind"
+      ],
+      "status": "draft"
+    },
+    "binding-vs-element-mutable": {
+      "kind": "definition",
+      "statement": "Binding mutability and element writability are separate axes: `let v: mut f32[]` may write `v[0]` but not reassign `v`; `mut v: f32[]` may reassign `v` but not write `v[0]`.",
+      "formal": "`let v: mut T[]` ⇒ element-write allowed, reassign `err`; `mut v: T[]` ⇒ reassign allowed, element-write `err`.",
+      "inputs": "slice bindings with differing qualifiers.",
+      "outputs": "the resulting capabilities.",
+      "depends_on": [
+        "slice.writability-in-type",
+        "slice.rebind"
+      ],
+      "status": "draft"
+    },
+    "subslice-preserve-qualifier": {
+      "kind": "definition",
+      "statement": "Sub-slicing preserves the qualifier: a `mut T[]` sub-slice is `mut T[]`, and a `T[]` sub-slice is `T[]`.",
+      "formal": "`type(s[a..b]) = type(s)` (the slice's own mutability carries through).",
+      "inputs": "a sub-slice of a slice.",
+      "outputs": "a slice of the same qualifier.",
+      "depends_on": [
+        "slice.writability-in-type"
+      ],
+      "status": "draft"
+    },
+    "widening": {
+      "kind": "guarantee",
+      "statement": "A read-only view can never be widened into a writable one; the reverse is free.",
+      "formal": "`T[] → mut T[]` ⇒ `err` (no widening); `mut T[] → T[]` ⇒ allowed.",
+      "inputs": "a coercion between slice qualifiers.",
+      "outputs": "`err` only for read-only → writable.",
+      "depends_on": [
+        "slice.writability-in-type"
+      ],
+      "status": "draft"
+    },
+    "index": {
+      "mechanism": {
+        "kind": "definition",
+        "statement": "`slice[index]` and sub-slicing are dedicated language mechanisms computed by the compiler; a slice's internal base is not a `&T`, cannot be rebound directly, and is never an arithmetic-capable value in user code.",
+        "formal": "`⟦s[i]⟧ = s.ptr + i · size(T)` (compiler-internal); `s.ptr` is not exposed as `&T` and has no user arithmetic.",
+        "inputs": "a slice subscript / sub-slice.",
+        "outputs": "the element / sub-slice, computed internally.",
+        "depends_on": [
+          "slice.representation"
+        ],
+        "status": "draft"
+      }
+    },
+    "size-builtin": {
+      "kind": "definition",
+      "statement": "`slice.size` gives the slice's current length as an `usz` — a load of the slice's length word, the same read-only builtin as `arr.size`.",
+      "formal": "`⟦s.size⟧ = s.len : usz` (load of the length word).",
+      "inputs": "`.size` on a slice.",
+      "outputs": "the current length (typed `usz`).",
+      "depends_on": [
+        "slice.representation"
+      ],
+      "status": "decided"
+    },
+    "non-owning": {
+      "kind": "footgun.ub",
+      "statement": "A slice does not own the memory it views; its validity depends on the underlying data outliving it, subject to the dangling-reference risk of §3.6.",
+      "formal": "a slice outliving its backing store ⇒ `unspecified`.",
+      "inputs": "a slice whose backing store is gone.",
+      "outputs": "`unspecified`.",
+      "depends_on": [
+        "reference.dangling.footgun"
+      ],
+      "status": "draft"
+    },
+    "undefined": {
+      "kind": "constraint",
+      "statement": "A slice is a view, so it cannot be `undefined`-initialized; it comes into existence only by viewing a real array (`&a`/`&mut a`), by sub-slicing, or from a string literal.",
+      "formal": "`= undefined` on a slice ⇒ `err`; creation paths are exactly the three listed.",
+      "inputs": "initialization of a slice.",
+      "outputs": "`err` for `undefined`; otherwise one of the three creation paths.",
+      "depends_on": [
+        "variable.initialization.undefined.value-type"
+      ],
+      "status": "draft"
+    },
+    "subslice": {
+      "range": {
+        "kind": "definition",
+        "statement": "A range subscript `a[i..j]`/`a[i..=j]` covers the interval per `statement.range.bounds`.",
+        "formal": "`a[i..j]` ⇒ elements `i, …, j−1`; `a[i..=j]` ⇒ elements `i, …, j`.",
+        "inputs": "a range subscript.",
+        "outputs": "the sub-slice over the (half-)closed interval.",
+        "depends_on": [
+          "statement.range.bounds"
+        ],
+        "status": "draft"
+      },
+      "out-of-bounds": {
+        "kind": "footgun.ub",
+        "statement": "A sub-slice range whose bounds fall outside the array/slice, or with `end < start`, is unchecked at runtime (the same risk class as `array.out-of-bounds`).",
+        "formal": "`a[i..j]` with `i ≥ n` or `j > n` or `j < i` ⇒ `unspecified` (no bounds check emitted).",
+        "inputs": "an out-of-bounds or inverted sub-slice range.",
+        "outputs": "`unspecified`.",
+        "depends_on": [
+          "array.out-of-bounds"
+        ],
+        "status": "decided"
+      },
+      "of-slice": {
+        "kind": "definition",
+        "statement": "Both arrays and slices may be sub-sliced; sub-slicing a slice behaves exactly as sub-slicing an array, and the qualifier is preserved.",
+        "formal": "`s[a..b]` on `s : T[]` ⇒ `{ ptr = s.ptr + a·size(T), len = b−a } : T[]`; on `mut T[]` ⇒ `mut T[]`.",
+        "inputs": "a sub-slice of a slice.",
+        "outputs": "a slice of the same qualifier.",
+        "depends_on": [
+          "slice.subslice-preserve-qualifier"
+        ],
+        "status": "decided"
+      }
+    }
+  },
+  "function": {
+    "declaration": {
+      "syntax": {
+        "kind": "definition",
+        "statement": "A function declaration is `fn Name(params)`, optionally with `-> ReturnType`; an absent return type means the function returns no value.",
+        "formal": "`fn Name(p₁: T₁, …, pₙ: Tₙ) [-> R]`; `R` absent ⇒ no return value.",
+        "inputs": "a function declaration.",
+        "outputs": "its name, parameter list, and optional return type.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "forward-reference": {
+        "kind": "definition",
+        "statement": "A function may be called before its declaration appears in the file; names are resolved across the whole program.",
+        "formal": "call-site resolution is independent of textual order; every `fn` name is visible program-wide.",
+        "inputs": "a call to a function declared later in the file.",
+        "outputs": "the call resolves to that function.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "name": {
+      "cross-kind": {
+        "kind": "constraint",
+        "statement": "A symbol name is unique across all kinds: a function, struct, enum, or type may not reuse a name already bound to any other symbol.",
+        "formal": "two symbols of any kind with the same name ⇒ `err`.",
+        "inputs": "a declaration whose name collides across kinds.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "overload": {
+      "signature": {
+        "kind": "constraint",
+        "statement": "A function's identity is its name plus the exact types of its parameters in order. Two functions may share a name iff their parameter-type lists differ; the return type does not participate. For a method, the `self` parameter is excluded from the key.",
+        "formal": "`key(f) = (name(f), ⟨type(p₁), …, type(pₙ)⟩)` over the explicit parameters (excluding a method's `self`); two functions with equal key ⇒ `err`; equal name, different type-list ⇒ overload (allowed).",
+        "inputs": "two function declarations.",
+        "outputs": "`err` iff same name and same explicit parameter-type list.",
+        "depends_on": [
+          "function.name.cross-kind"
+        ],
+        "notes": "return type and a method's `self` are both excluded from the key, so `m(&T, x)` and `m(&mut T, x)` are the same overload (duplicate error).",
+        "status": "decided"
+      },
+      "resolve": {
+        "kind": "definition",
+        "statement": "A call resolves to the unique function whose parameter types exactly match the arguments' *default* (context-free) types; there is no implicit conversion. Zero or multiple matches is a compile error.",
+        "formal": "compute `type⁰(aᵢ)` = the context-free type of each argument (a literal → its default width `i32`/`f32`); select the unique `f` with `type⁰(aᵢ) = type(pᵢ)` for all `i`; then apply context typing (`type.context.propagation`) to the args against the selected `pᵢ`. Zero or multiple matches ⇒ `err`.",
+        "inputs": "a call site and the candidate overloads.",
+        "outputs": "the unique matching function (by default type), or `err`.",
+        "depends_on": [
+          "function.overload.signature",
+          "type.no-implicit-conversion",
+          "type.context.propagation"
+        ],
+        "notes": "\"default type wins\": overload selection uses default types, so `Foo(1)` ⇒ `Foo(i32)` even if `Foo(i64)` exists; context typing applies only after the single winner is chosen.",
+        "status": "decided"
+      }
+    },
+    "return": {
+      "on-all-paths": {
+        "kind": "constraint",
+        "statement": "A function declared `-> R` must `return` a value on every path that reaches its closing brace; reaching the end of a `-> R` body without executing `return` is a compile error.",
+        "formal": "for `fn F(...) -> R`, a compile error iff control flow can reach the closing `}` without having executed `return`. Branch-aware: `if`/`else` requires both branches to return; a `while (true)` loop with no reachable `break`/`return` makes the close unreachable (no error).",
+        "inputs": "a `-> R` function body.",
+        "outputs": "`err` iff the closing brace is reachable on some path with no `return` executed.",
+        "depends_on": [],
+        "notes": "the exact `break`/`continue`/loop interaction is finalized when §10 (while) is extracted; this rule states the reachability semantics.",
+        "status": "decided"
+      }
+    },
+    "parameter": {
+      "immutable": {
+        "kind": "definition",
+        "statement": "A parameter is an immutable binding; it cannot be reassigned.",
+        "formal": "`p` (parameter) is not an assignable l-value; `p = …` ⇒ `err`.",
+        "inputs": "a parameter and an assignment to it.",
+        "outputs": "the parameter binding is read-only.",
+        "depends_on": [
+          "variable.binding.let"
+        ],
+        "status": "draft"
+      },
+      "reassign": {
+        "kind": "constraint",
+        "statement": "Reassigning a parameter is a compile error; mutability is expressed only through the parameter's *type* — a `&mut T` parameter's referent may be written, but the parameter binding itself (the reference) remains immutable and cannot be rebound.",
+        "formal": "`p = …` (parameter) ⇒ `err`; `*p = v` is allowed iff `p : &mut T`.",
+        "inputs": "an assignment to a parameter.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "function.parameter.immutable",
+          "reference.mutable.split"
+        ],
+        "status": "draft"
+      },
+      "mutable-reference-write": {
+        "kind": "definition",
+        "statement": "A `&mut` parameter is a reference; writing through it is an explicit dereference.",
+        "formal": "`*p = v` / `*p += v` (with `p : &mut T`) writes the referent.",
+        "inputs": "a `&mut` parameter and a write through it.",
+        "outputs": "the referent is written.",
+        "depends_on": [
+          "reference.deref.write-requires-mutable"
+        ],
+        "status": "draft"
+      },
+      "pass-by-value": {
+        "kind": "definition",
+        "statement": "A value-type argument (primitive, struct, array) is passed by value: the argument is copied into the parameter's storage. (Large values are passed by reference explicitly via `&`/`&mut`.)",
+        "formal": "passing `arg : T` (value type) to `p : T` copies `arg` into `p`; `p` is a distinct value.",
+        "inputs": "a value-type argument and its parameter.",
+        "outputs": "a copy is made.",
+        "depends_on": [
+          "array.copy-semantics"
+        ],
+        "status": "decided"
+      }
+    },
+    "void": {
+      "no-value": {
+        "kind": "constraint",
+        "statement": "A function without a return type produces no value; a call to it may appear only as a statement, and using it where a value is expected is a compile error.",
+        "formal": "`F()` with no return type ⇒ no value; `… = F()` / `F()` in an expression ⇒ `err`.",
+        "inputs": "a call to a void function.",
+        "outputs": "no value; expression use ⇒ `err`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "bare-return": {
+        "kind": "definition",
+        "statement": "In a function without a return type, a bare `return;` may optionally exit the body early and return to the caller; falling off the closing brace also returns.",
+        "formal": "`return;` in a void body transfers control to the caller; reaching the closing `}` does likewise.",
+        "inputs": "a `return;` in a void function.",
+        "outputs": "control returns to the caller.",
+        "depends_on": [
+          "function.void.no-value"
+        ],
+        "notes": "converse: a bare `return;` in a `-> R` function is an error (no value returned).",
+        "status": "decided"
+      },
+      "return-value": {
+        "kind": "constraint",
+        "statement": "`return e;` in a function with no return type is a compile error.",
+        "formal": "`return e;` in a void function ⇒ `err`.",
+        "inputs": "a value-return in a void function.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "function.void.no-value"
+        ],
+        "status": "decided"
+      }
+    },
+    "method": {
+      "definition": {
+        "kind": "definition",
+        "statement": "A function whose first parameter is a reference to its own struct type (`&Type` or `&mut Type`) is a method.",
+        "formal": "`is_method(f) ⇔ type(first param of f) ∈ {&S, &mut S}` for the struct `S` that namespaces `f`.",
+        "inputs": "a namespaced function.",
+        "outputs": "whether it is a method.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "self-convention": {
+        "kind": "definition",
+        "statement": "`self` is a naming convention, not a keyword; method-ness is determined by the first parameter's *type*, not its name.",
+        "formal": "the first parameter may be named anything; a `&S`/`&mut S` first parameter makes it a method regardless of the name.",
+        "inputs": "a method's first parameter.",
+        "outputs": "method-ness independent of the parameter's name.",
+        "depends_on": [
+          "function.method.definition"
+        ],
+        "status": "draft"
+      },
+      "consistency": {
+        "kind": "constraint",
+        "statement": "All overloads of a namespaced name must agree on method-ness: every overload has a `self` parameter, or none do. Mixing method and non-method overloads under one name is a compile error.",
+        "formal": "for a name `m` namespaced to `S`, either `∀ i: is_method(mᵢ)` or `∀ i: ¬is_method(mᵢ)`; a mix ⇒ `err`.",
+        "inputs": "the overloads of a namespaced name.",
+        "outputs": "`err` if method-ness is mixed across overloads.",
+        "depends_on": [
+          "function.method.definition",
+          "function.overload.signature"
+        ],
+        "status": "decided"
+      },
+      "call-sugar": {
+        "kind": "definition",
+        "statement": "Calling a method on a value `v.m(args)` desugars to `S.m(&v, args)` (or `S.m(&mut v, args)` for a `&mut` self).",
+        "formal": "`v.m(a) ≡ S.m(&v, a)` when self is `&S`; `v.m(a) ≡ S.m(&mut v, a)` when self is `&mut S`.",
+        "inputs": "a method call on a value.",
+        "outputs": "the desugared namespaced call.",
+        "depends_on": [
+          "function.method.definition"
+        ],
+        "notes": "the reference's example shows `&my_transform` for a `&mut` self; the `&mut` form is the correct desugaring (see `function.method.mutable-self-constraint`).",
+        "status": "draft"
+      },
+      "mutable-self-constraint": {
+        "kind": "constraint",
+        "statement": "`&mut Type` self-parameters require the instance's own binding to be `mut`.",
+        "formal": "`v.m(a)` with `m`'s first param `&mut S` valid iff `binding(v) = mut`, else `err`.",
+        "inputs": "a method call whose self parameter is `&mut`.",
+        "outputs": "`err` if `v` is not `mut`.",
+        "depends_on": [
+          "reference.mutable.take-constraint"
+        ],
+        "status": "draft"
+      },
+      "arrow-call": {
+        "kind": "definition",
+        "statement": "Calling a method on a reference uses `->`: where `r: &mut Transform`, `r->Translate(1, 1)` is `Transform.Translate(r, 1, 1)` — it passes the reference itself, not `&r`.",
+        "formal": "`r->m(a) ≡ S.m(r, a)`.",
+        "inputs": "a method call on a reference.",
+        "outputs": "the desugared call passing `r`.",
+        "depends_on": [
+          "function.method.call-sugar"
+        ],
+        "status": "draft"
+      }
+    },
+    "namespaced-call": {
+      "kind": "definition",
+      "statement": "A function declared without a leading self-parameter is namespaced to the type but is not a method, and is called as `S.name(args)`.",
+      "formal": "non-method namespaced functions are called `S.f(args)`, never `v.f(args)`.",
+      "inputs": "a namespaced non-method function.",
+      "outputs": "its call form.",
+      "depends_on": [
+        "function.method.definition"
+      ],
+      "status": "draft"
+    }
+  },
+  "struct": {
+    "declaration": {
+      "body": {
+        "kind": "definition",
+        "statement": "A struct's body lists its fields, followed by the signatures of any functions namespaced onto the type.",
+        "formal": "`struct S { f₁: T₁; …; fn m(…) -> …; … }` — fields first, then function signatures.",
+        "inputs": "a struct declaration.",
+        "outputs": "its field list and namespaced-function signature list.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "interface": {
+      "complete": {
+        "kind": "constraint",
+        "statement": "The signature list is the struct's complete interface — a function may be namespaced onto a type only if its signature is declared in the struct body.",
+        "formal": "`fn S.m(…)` (implementation) valid iff `m`'s signature is declared in `S`'s body; else `err`.",
+        "inputs": "a namespaced-function implementation.",
+        "outputs": "`err` if its signature is not declared in the struct.",
+        "depends_on": [
+          "struct.declaration.body"
+        ],
+        "status": "draft"
+      }
+    },
+    "field": {
+      "unique-names": {
+        "kind": "constraint",
+        "statement": "Struct field names must be unique within the struct.",
+        "formal": "two fields with the same name in one struct ⇒ `err`.",
+        "inputs": "a struct with duplicate field names.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "recursion": {
+        "kind": "constraint",
+        "statement": "A struct may not contain itself transitively *by value* (its size would be non-finite); a field of reference type (`&S`, `&mut S`) is legal and is not recursion, since a reference is a pointer, not a nested value.",
+        "formal": "`S` is ill-formed iff `S` transitively contains `S` through value-typed fields (making `size(S)` an ungrounded recurrence); a `&S` field contributes `size(&S) = 8`, not `size(S)`, so it is legal.",
+        "inputs": "a struct with a (transitive) self-referential field.",
+        "outputs": "`err` for by-value self-containment; legal for reference fields.",
+        "depends_on": [
+          "memory.struct.size",
+          "reference.type.representation"
+        ],
+        "status": "decided"
+      },
+      "default": {
+        "kind": "definition",
+        "statement": "A field may declare a default value, used when the field is otherwise uninitialized.",
+        "formal": "`f: T = d` declares `d` as the field's default, used per `variable.initialization.defaulted.semantics`.",
+        "inputs": "a field declaration with a default.",
+        "outputs": "the default value.",
+        "depends_on": [
+          "variable.initialization.defaulted.semantics"
+        ],
+        "status": "draft",
+        "constant": {
+          "kind": "constraint",
+          "statement": "A field default must be a compile-time constant expression.",
+          "formal": "`f: T = d` valid iff `d` is a constant expression per `expression.constant-expression`; else `err`.",
+          "inputs": "a field default.",
+          "outputs": "`err` if not a constant.",
+          "depends_on": [
+            "expression.constant-expression"
+          ],
+          "status": "decided"
+        },
+        "value-only": {
+          "kind": "constraint",
+          "statement": "A default may appear only on value fields; a reference-typed field cannot declare a default.",
+          "formal": "`f: &T = d` ⇒ `err`.",
+          "inputs": "a reference-typed field with a default.",
+          "outputs": "`err`.",
+          "depends_on": [
+            "reference.field.no-default"
+          ],
+          "status": "draft"
+        }
+      }
+    },
+    "implementation": {
+      "qualified": {
+        "kind": "definition",
+        "statement": "Implementations are written separately, qualified with the struct's name, and may appear anywhere in the program.",
+        "formal": "`fn S.m(…) -> R { … }` defines `m` for `S`; position/order in the file is unconstrained.",
+        "inputs": "a namespaced-function implementation.",
+        "outputs": "the function's definition.",
+        "depends_on": [
+          "struct.interface.complete"
+        ],
+        "status": "draft"
+      }
+    }
+  },
+  "memory": {
+    "struct": {
+      "order": {
+        "kind": "definition",
+        "statement": "Struct fields are laid out in declaration order.",
+        "formal": "`offset(fᵢ) < offset(fᵢ₊₁)` for consecutive declared fields.",
+        "inputs": "a struct's field declarations.",
+        "outputs": "offsets increasing in declaration order.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "field": {
+        "offset": {
+          "kind": "definition",
+          "statement": "Each field is placed at its natural alignment: the first field at offset 0; each subsequent field at the first offset ≥ (previous field's offset + its size) that is a multiple of the field's alignment, inserting padding as needed.",
+          "formal": "`offset(f₀) = 0`; `offset(fᵢ) = align_up(offset(fᵢ₋₁) + size(type(fᵢ₋₁)), align(type(fᵢ)))`.",
+          "inputs": "a struct's fields with known `size`/`align`.",
+          "outputs": "each field's byte offset.",
+          "depends_on": [
+            "memory.struct.align",
+            "type.primitive.size-align"
+          ],
+          "status": "draft"
+        }
+      },
+      "align": {
+        "kind": "definition",
+        "statement": "A struct's alignment is the largest of its fields' alignments; an empty struct has alignment 1.",
+        "formal": "`align(S) = max over fields f of align(type(f))`; `align(S) = 1` if `fields(S) = ∅`.",
+        "inputs": "a struct.",
+        "outputs": "its alignment.",
+        "depends_on": [
+          "memory.struct.empty"
+        ],
+        "status": "decided"
+      },
+      "size": {
+        "kind": "definition",
+        "statement": "A struct's size is rounded up to a multiple of its alignment; an empty struct has size 1.",
+        "formal": "`size(S) = align_up(offset(f_last) + size(type(f_last)), align(S))`; `size(S) = 1` if `fields(S) = ∅`.",
+        "inputs": "a struct.",
+        "outputs": "its size.",
+        "depends_on": [
+          "memory.struct.field.offset",
+          "memory.struct.align",
+          "memory.struct.empty"
+        ],
+        "status": "decided"
+      },
+      "empty": {
+        "kind": "definition",
+        "statement": "A zero-field struct is legal and has size 1 and alignment 1.",
+        "formal": "`fields(S) = ∅` ⇒ `size(S) = 1`, `align(S) = 1`.",
+        "inputs": "an empty struct.",
+        "outputs": "`size = 1`, `align = 1`.",
+        "depends_on": [],
+        "notes": "chosen for distinct addresses, well-behaved arrays (`Marker[3]` ⇒ size 3), and consistency with the zero-length-array rejection (`gap.slice.2`).",
+        "status": "decided"
+      },
+      "padding": {
+        "kind": "definition",
+        "statement": "Padding bytes inserted for alignment are zeroed on default-initialization (form a); `undefined`-initialization leaves them unspecified.",
+        "formal": "default-init (form a) zeroes the entire value including padding (a single memset over `size(S)`); `undefined`-init ⇒ padding `unspecified`.",
+        "inputs": "a struct with internal padding.",
+        "outputs": "zeroed padding on default-init; unspecified padding on `undefined`-init.",
+        "depends_on": [
+          "variable.initialization.defaulted.semantics",
+          "variable.initialization.undefined.semantics"
+        ],
+        "status": "decided"
+      }
+    },
+    "layout": {
+      "endian": {
+        "kind": "definition",
+        "statement": "All multi-byte values are stored little-endian: the least-significant byte at the lowest address.",
+        "formal": "for a value of width `N` bytes, byte `i` (0 = LSB) is at `address + i`; little-endian order throughout.",
+        "inputs": "any multi-byte value's memory representation.",
+        "outputs": "little-endian byte order.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    }
+  },
+  "enum": {
+    "representation": {
+      "kind": "definition",
+      "statement": "An enum holds exactly one variant; in memory it is a tag at offset 0, then padding, then the payload area; the enum's alignment is the max of the tag's and the largest variant's alignments; its size is rounded up to that alignment.",
+      "formal": "`offset(tag) = 0`; `size(tag) = size(TagType)`; `align(payload) = maxᵥ align(V)`, `size(payload) = maxᵥ size(V)`; `offset(payload) = align_up(size(TagType), align(payload))`; `align(E) = max(align(TagType), align(payload))`; `size(E) = align_up(offset(payload) + size(payload), align(E))`.",
+      "inputs": "an enum type.",
+      "outputs": "its memory layout.",
+      "depends_on": [
+        "enum.variant.min-one"
+      ],
+      "notes": "`align(E) = max(tag, largest variant)` fixes the prose's omission of the tag's alignment (a latent bug when the tag is wider than the payload).",
+      "status": "decided"
+    },
+    "declaration": {
+      "syntax": {
+        "kind": "definition",
+        "statement": "An enum is declared `enum Name: TagType { V₁, V₂(params), … }`.",
+        "formal": "`enum N: TT { V₁, V₂(p₁: T₁, …), … }`.",
+        "inputs": "an enum declaration.",
+        "outputs": "its name, tag type, and variants.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "tag": {
+      "mandatory": {
+        "kind": "constraint",
+        "statement": "The tag type is mandatory and explicit; there is no auto-inference from variant count.",
+        "formal": "`enum N { … }` without `: TagType` ⇒ `err`.",
+        "inputs": "an enum declaration lacking a tag type.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "type": {
+        "kind": "constraint",
+        "statement": "The tag type must be a fixed-width unsigned integer (`u8`/`u16`/`u32`/`u64`); the number of variants must be representable in the tag's width. `usz` is excluded to keep enum layout ABI-stable across architectures.",
+        "formal": "`TagType ∈ {u8, u16, u32, u64}`, else `err`; `|variants| ≤ 2^width`, else `err`.",
+        "inputs": "an enum tag type and its variant count.",
+        "outputs": "`err` if the tag type is not a fixed-width unsigned integer, or if the variant count overflows the tag width.",
+        "depends_on": [],
+        "notes": "`usz` is excluded: a native-width tag would make enum size/align vary by target, breaking ABI stability.",
+        "status": "decided"
+      }
+    },
+    "variant": {
+      "min-one": {
+        "kind": "constraint",
+        "statement": "An enum must declare at least one variant; a zero-variant (uninhabited) enum is a compile error.",
+        "formal": "`enum N: TT { }` ⇒ `err`.",
+        "inputs": "an enum declaration with no variants.",
+        "outputs": "`err`.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "no-data": {
+        "kind": "constraint",
+        "statement": "A variant with no data omits the parameter list: `NoOp,` not `NoOp(),`.",
+        "formal": "a data-less variant is written without `()`; `NoOp()` ⇒ `err`.",
+        "inputs": "a variant declaration.",
+        "outputs": "`err` for `NoOp()`.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "payload-syntax": {
+        "kind": "definition",
+        "statement": "Variant payloads are declared using the same syntax as function parameter lists.",
+        "formal": "`V(p₁: T₁, …, pₙ: Tₙ)` mirrors function parameter syntax.",
+        "inputs": "a variant payload declaration.",
+        "outputs": "its typed fields.",
+        "depends_on": [
+          "function.declaration.syntax"
+        ],
+        "status": "draft"
+      },
+      "field-names": {
+        "kind": "constraint",
+        "statement": "Variant payload fields must be named and unique within the variant; construction and destructuring remain positional.",
+        "formal": "every payload field is `name: T` (name required); two fields with the same name in one variant ⇒ `err`; use is positional.",
+        "inputs": "a variant payload declaration.",
+        "outputs": "`err` if a field is unnamed or a name repeats within the variant.",
+        "depends_on": [
+          "enum.variant.payload-syntax"
+        ],
+        "status": "decided"
+      },
+      "reference-payload": {
+        "kind": "definition",
+        "statement": "A variant may hold a reference to a larger payload instead of the payload inline.",
+        "formal": "`V(p: &T)` stores the reference, not `T` inline.",
+        "inputs": "a reference-payload variant.",
+        "outputs": "the reference is stored.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "instantiate": {
+      "qualified": {
+        "kind": "definition",
+        "statement": "A value is constructed by qualifying the variant name with its enum, passing field values positionally in declared order.",
+        "formal": "`E.V(v₁, …, vₙ)` constructs variant `V` with payload `(v₁,…,vₙ)`.",
+        "inputs": "a variant construction.",
+        "outputs": "an enum value.",
+        "depends_on": [
+          "enum.variant.payload-syntax"
+        ],
+        "status": "draft"
+      },
+      "unit-variant": {
+        "kind": "definition",
+        "statement": "A data-less variant is constructed without parentheses: `Event.NoOp`.",
+        "formal": "`E.V` (no `()`) constructs a unit variant.",
+        "inputs": "a unit-variant construction.",
+        "outputs": "an enum value with no payload.",
+        "depends_on": [
+          "enum.variant.no-data"
+        ],
+        "status": "draft"
+      }
+    },
+    "boxing": {
+      "manual": {
+        "kind": "definition",
+        "statement": "Boxing is manual — the language never boxes a variant automatically.",
+        "formal": "no implicit heap allocation for any variant.",
+        "inputs": "a variant.",
+        "outputs": "no implicit boxing.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "reference-payload": {
+      "dangling": {
+        "kind": "footgun.ub",
+        "statement": "A reference-holding variant is subject to the same dangling risk as any other reference.",
+        "formal": "a reference-payload variant outliving its referent ⇒ `unspecified`.",
+        "inputs": "a reference-payload variant whose referent is gone.",
+        "outputs": "`unspecified`.",
+        "depends_on": [
+          "reference.dangling.footgun"
+        ],
+        "status": "draft"
+      }
+    }
+  },
+  "match": {
+    "expression": {
+      "kind": "definition",
+      "statement": "`match` is an expression.",
+      "formal": "`match (e) { arms }` yields a value when used as an expression.",
+      "inputs": "a match expression.",
+      "outputs": "its value (in expression position).",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "subject": {
+      "enum": {
+        "kind": "constraint",
+        "statement": "The subject of `match` must be an enum; other discrete representable values use `switch` (§8).",
+        "formal": "`match (e)` valid iff `type(e)` is an enum; else `err`.",
+        "inputs": "a match subject.",
+        "outputs": "`err` if not an enum.",
+        "depends_on": [],
+        "status": "decided"
+      }
+    },
+    "arm": {
+      "single-expression": {
+        "kind": "definition",
+        "statement": "A single-expression arm's value is that expression.",
+        "formal": "`Pat => e` ⇒ arm value = `⟦e⟧`.",
+        "inputs": "a single-expression arm.",
+        "outputs": "the expression's value.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "block-yield": {
+        "kind": "definition",
+        "statement": "A block-bodied arm produces its value via an explicit `yield expr;`, which exits the block immediately, the same way `return` exits a function.",
+        "formal": "`Pat => { …; yield e; … }` ⇒ arm value = `⟦e⟧`; `yield` exits the block immediately.",
+        "inputs": "a block-bodied arm with `yield`.",
+        "outputs": "the yielded value.",
+        "depends_on": [],
+        "notes": "`yield` is a statement whose full control-flow rules (§8–§11) are deferred; this rule states only its match-arm consequence.",
+        "status": "draft"
+      },
+      "discarded-no-yield": {
+        "kind": "definition",
+        "statement": "When a match's result is discarded, block-bodied arms need not `yield` and run as an ordinary statement sequence.",
+        "formal": "in statement position, `yield` is optional in block arms.",
+        "inputs": "a discarded match with block arms.",
+        "outputs": "arms run as statements.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "exhaustive": {
+      "kind": "constraint",
+      "statement": "`match` must handle every variant of the enum being matched.",
+      "formal": "the arm patterns must cover all variants of `type(e)`; else `err` (unless a final `else` is present).",
+      "inputs": "a match.",
+      "outputs": "`err` if a variant is unhandled and no `else`.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "else-arm": {
+      "kind": "constraint",
+      "statement": "`else` covers the remaining variants and must be the final arm; an arm after `else` is a compile error (unreachable).",
+      "formal": "`else => e` matches any variant not matched earlier; `else` must be the last arm — an arm following `else` ⇒ `err`.",
+      "inputs": "an `else` arm and any arm following it.",
+      "outputs": "covers the remainder; `err` if an arm follows `else`.",
+      "depends_on": [
+        "statement.no-fallthrough"
+      ],
+      "status": "decided"
+    },
+    "destructure": {
+      "positional": {
+        "kind": "definition",
+        "statement": "Payload destructuring is positional, matching the variant's declared field order; a field that isn't needed can be bound and left unused.",
+        "formal": "`V(p₁, …, pₙ)` binds each payload field positionally to `pᵢ`; unused bindings are allowed.",
+        "inputs": "a variant destructuring pattern.",
+        "outputs": "positional bindings.",
+        "depends_on": [
+          "enum.instantiate.qualified"
+        ],
+        "status": "draft"
+      }
+    }
+  },
+  "statement": {
+    "condition-bool": {
+      "kind": "constraint",
+      "statement": "The condition of `if` and `while` must be `bool`; no implicit conversion from any other type.",
+      "formal": "`if (e)` / `while (e)` valid iff `type(e) = bool`; else `err`.",
+      "inputs": "an `if`/`while` condition.",
+      "outputs": "`err` if not `bool`.",
+      "depends_on": [
+        "type.bool.ops"
+      ],
+      "status": "draft"
+    },
+    "braces-optional": {
+      "kind": "constraint",
+      "statement": "Braces are optional; without braces, exactly one statement follows — a sequence of statements requires `{ }`.",
+      "formal": "a body is either `{ stmt* }` or a single statement (no braces).",
+      "inputs": "an `if`/`while` body.",
+      "outputs": "the body (single statement or block).",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "no-fallthrough": {
+      "kind": "guarantee",
+      "statement": "The arms of `match` and `switch` are checked in order, and no fallthrough occurs — exactly one arm's expression is evaluated.",
+      "formal": "arms are tested top-to-bottom; the first matching arm is chosen; no fallthrough.",
+      "inputs": "a `match`/`switch` with multiple arms.",
+      "outputs": "exactly one arm evaluated.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "same-type": {
+      "kind": "constraint",
+      "statement": "When `match`/`switch`/`if` is used as an expression, every arm/branch must produce a value of the same type.",
+      "formal": "`type(armᵢ) = type(armⱼ)` for all arms/branches, else `err`.",
+      "inputs": "a `match`/`switch`/`if` used as an expression.",
+      "outputs": "`err` if the arm/branch types differ.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "switch": {
+      "subject": {
+        "kind": "definition",
+        "statement": "`switch` matches a value against primitive literals, multiple discrete values, or ranges; the subject must be an integer (`i*`/`u*`/`isz`/`usz`) or `byte` — not `bool`, not floats.",
+        "formal": "`switch (e)` valid iff `type(e) ∈ {i8..i64, u8..u64, isz, usz, byte}`; else `err`.",
+        "inputs": "a switch subject.",
+        "outputs": "`err` unless the subject is an integer or `byte`.",
+        "depends_on": [],
+        "notes": "`isz`/`usz` are included (they are integers); unlike enum tags, `switch` has no layout, so no ABI concern.",
+        "status": "decided"
+      },
+      "arm": {
+        "kind": "definition",
+        "statement": "An arm has the form `case => result`, where the result is a single expression or a block with `yield` (same as `match`).",
+        "formal": "`c₁, c₂, … => e` or `c => { … yield e; … }`.",
+        "inputs": "a switch arm.",
+        "outputs": "its value.",
+        "depends_on": [
+          "match.arm.single-expression",
+          "match.arm.block-yield"
+        ],
+        "status": "draft"
+      },
+      "multi-value": {
+        "kind": "definition",
+        "statement": "An arm may list multiple comma-separated values, matching if the subject equals any of them.",
+        "formal": "`v₁, v₂, …, vₙ => e` matches when `e == vᵢ` for some `i`.",
+        "inputs": "a multi-value case.",
+        "outputs": "matches any listed value.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "case-literal": {
+        "kind": "constraint",
+        "statement": "A case cites one or more literals, not expressions.",
+        "formal": "a case value is a literal (or a range of literals); a non-literal case ⇒ `err`.",
+        "inputs": "a switch case.",
+        "outputs": "`err` if the case is not a literal.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "range": {
+        "kind": "definition",
+        "statement": "A range case `a..b`/`a..=b` matches the subject if it falls within the interval (bounds per `statement.range.bounds`).",
+        "formal": "`a..b ⇒ a ≤ x < b`; `a..=b ⇒ a ≤ x ≤ b`.",
+        "inputs": "a range case.",
+        "outputs": "membership in the (half-)closed interval.",
+        "depends_on": [
+          "statement.range.bounds"
+        ],
+        "status": "draft"
+      },
+      "range-literal": {
+        "kind": "constraint",
+        "statement": "A range case's endpoints are literals, not expressions.",
+        "formal": "`a..b`/`a..=b` in a case: `a` and `b` are literals; a non-literal endpoint ⇒ `err`.",
+        "inputs": "a range case.",
+        "outputs": "`err` if an endpoint is not a literal.",
+        "depends_on": [
+          "statement.switch.range"
+        ],
+        "status": "draft"
+      },
+      "mix": {
+        "kind": "definition",
+        "statement": "A case may mix single values and ranges freely; each is checked as its own match.",
+        "formal": "`v₁, a..b, v₂, … => e` — each entry is an independent match.",
+        "inputs": "a mixed case.",
+        "outputs": "matches if any entry matches.",
+        "depends_on": [
+          "statement.switch.multi-value",
+          "statement.switch.range"
+        ],
+        "status": "draft"
+      },
+      "else-required": {
+        "kind": "constraint",
+        "statement": "A final `else` arm is mandatory; omitting it is a compile error.",
+        "formal": "a `switch` without a final `else` ⇒ `err`.",
+        "inputs": "a switch.",
+        "outputs": "`err` if no `else`.",
+        "depends_on": [
+          "match.else-arm"
+        ],
+        "status": "draft"
+      },
+      "subject-literal-form": {
+        "kind": "definition",
+        "statement": "The subject's type determines the literal form its cases are written in: an integer subject switches on integer literals, a `byte` subject on `byte` literals.",
+        "formal": "`type(subject)` selects the case literal form (integer vs `byte`).",
+        "inputs": "a switch subject and its cases.",
+        "outputs": "the expected case-literal form.",
+        "depends_on": [
+          "statement.switch.subject"
+        ],
+        "status": "draft"
+      },
+      "expression": {
+        "kind": "definition",
+        "statement": "`switch` is an expression, with the same single-expression/`yield` arm rules as `match`.",
+        "formal": "`switch (e) { arms }` yields a value when used as an expression.",
+        "inputs": "a switch in expression position.",
+        "outputs": "its value.",
+        "depends_on": [
+          "match.expression",
+          "statement.same-type"
+        ],
+        "status": "draft"
+      }
+    },
+    "range": {
+      "endpoint-form": {
+        "kind": "definition",
+        "statement": "Range endpoints are literals in a `switch` case (a closed compile-time table), but in a `for` loop or a subscript they may be arbitrary expressions — runtime variables, literals, or a mix.",
+        "formal": "`switch` case range: endpoints are literals (`statement.switch.range-literal`); `for`/subscript range: endpoints are expressions (typed `usz`, per `type.context.positions`).",
+        "inputs": "a range in any position.",
+        "outputs": "the permitted endpoint form (literal vs expression).",
+        "depends_on": [
+          "statement.switch.range-literal"
+        ],
+        "status": "decided"
+      },
+      "bounds": {
+        "kind": "definition",
+        "statement": "A range `a..b` is exclusive of `b`; `a..=b` is inclusive of `b`. These are the only two range forms, and they appear wherever a range does.",
+        "formal": "`a..b ⇒ [a, b)`; `a..=b ⇒ [a, b]`.",
+        "inputs": "a range expression.",
+        "outputs": "the half-closed (`..`) or closed (`..=`) interval.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "endpoint-agree": {
+        "kind": "constraint",
+        "statement": "The two endpoints of a range must have the same type; a mismatch is a compile error (no implicit conversion).",
+        "formal": "`a..b` / `a..=b` valid iff `type(a) = type(b)`; else `err`.",
+        "inputs": "a range with two endpoints.",
+        "outputs": "`err` if the endpoint types differ.",
+        "depends_on": [
+          "type.no-implicit-conversion"
+        ],
+        "notes": "switch endpoints (literals, context-typed) and subscript endpoints (`usz`) agree by construction; this constraint chiefly governs `for`-range endpoints.",
+        "status": "decided"
+      },
+      "not-a-value": {
+        "kind": "constraint",
+        "statement": "A range is not a value: `a..b`/`a..=b` may appear in exactly three positions — a `switch` case, after `in` in a `for`, and as a subscript. A range cannot be bound, stored, passed, or returned (there is no range type).",
+        "formal": "a range in any other position ⇒ `err`.",
+        "inputs": "a range expression.",
+        "outputs": "`err` unless in one of the three positions.",
+        "depends_on": [
+          "statement.switch.range",
+          "slice.subslice.range"
+        ],
+        "status": "draft"
+      }
+    },
+    "if": {
+      "expression": {
+        "kind": "definition",
+        "statement": "`if` is an expression; the single-line form also serves as the ternary (no separate `? :` operator).",
+        "formal": "`if (c) a else b` yields a value when used as an expression.",
+        "inputs": "an if in expression position.",
+        "outputs": "its value.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "single-statement-value": {
+        "kind": "definition",
+        "statement": "A single-statement branch's value is that statement's expression.",
+        "formal": "`if (c) e` (statement-expression `e`) ⇒ value = `⟦e⟧`.",
+        "inputs": "a single-statement branch.",
+        "outputs": "the statement's expression value.",
+        "depends_on": [
+          "statement.braces-optional"
+        ],
+        "status": "draft"
+      },
+      "block-yield": {
+        "kind": "definition",
+        "statement": "A block-bodied branch produces its value via an explicit `yield expr;`, the same as `match`/`switch`.",
+        "formal": "`if (c) { … yield e; … }` ⇒ branch value = `⟦e⟧`.",
+        "inputs": "a block-bodied branch with `yield`.",
+        "outputs": "the yielded value.",
+        "depends_on": [
+          "match.arm.block-yield"
+        ],
+        "status": "draft"
+      },
+      "branch-value": {
+        "kind": "constraint",
+        "statement": "When `if` is used as an expression, each branch must produce a value, checked independently: a block branch via `yield expr;`, and a single-statement branch must be an expression (a value-less statement like `while`/`for`/`return`/`break`/`continue` is a compile error). Block and single-statement branches may be mixed.",
+        "formal": "for `if` in expression position, every branch must produce a value; a single-statement branch whose statement is value-less ⇒ `err`.",
+        "inputs": "an if-expression.",
+        "outputs": "`err` if any branch produces no value.",
+        "depends_on": [
+          "statement.if.block-yield",
+          "statement.if.single-statement-value"
+        ],
+        "status": "decided"
+      },
+      "else-required": {
+        "kind": "constraint",
+        "statement": "When used as an expression, a final `else` is mandatory — there is no default value for an uncovered path.",
+        "formal": "`if` in expression position without `else` ⇒ `err`.",
+        "inputs": "an if-expression.",
+        "outputs": "`err` if no `else`.",
+        "depends_on": [
+          "statement.if.expression"
+        ],
+        "status": "draft"
+      }
+    },
+    "dangling-else": {
+      "kind": "footgun.defined",
+      "statement": "With braces optional, a bare `else` following nested unbraced `if`s attaches to the nearest preceding `if` that doesn't already have one (C's rule).",
+      "formal": "`else` binds to the innermost preceding `if` without an `else`.",
+      "inputs": "a bare `else` after nested unbraced `if`s.",
+      "outputs": "attaches to the nearest `if`.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "while": {
+      "statement": {
+        "kind": "definition",
+        "statement": "`while` is a statement, not an expression — its body may execute zero times, so no value can be guaranteed to come out of it.",
+        "formal": "`while (c) { … }` produces no value; expression use ⇒ `err`.",
+        "inputs": "a while loop.",
+        "outputs": "no value.",
+        "depends_on": [],
+        "status": "draft"
+      }
+    },
+    "break": {
+      "kind": "definition",
+      "statement": "`break` exits the innermost enclosing loop immediately.",
+      "formal": "`break;` transfers control to just after the loop body.",
+      "inputs": "a `break` in a loop.",
+      "outputs": "control exits the loop.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "continue": {
+      "kind": "definition",
+      "statement": "`continue` skips to the next condition check (for `while`), advancing the index (for `for`).",
+      "formal": "`continue;` jumps to the loop's next iteration.",
+      "inputs": "a `continue` in a loop.",
+      "outputs": "control skips to the next iteration.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "break-continue": {
+      "loop-only": {
+        "kind": "constraint",
+        "statement": "`break`/`continue` are valid only inside a loop body; using either outside one is a compile error.",
+        "formal": "`break`/`continue` outside a loop ⇒ `err`.",
+        "inputs": "a `break`/`continue` outside a loop.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "statement.break",
+          "statement.continue"
+        ],
+        "status": "draft"
+      },
+      "innermost": {
+        "kind": "guarantee",
+        "statement": "`break`/`continue` always affect the innermost enclosing loop — there is no labeled break/continue.",
+        "formal": "a `break`/`continue` targets the innermost enclosing loop only.",
+        "inputs": "a `break`/`continue` in nested loops.",
+        "outputs": "targets the innermost loop.",
+        "depends_on": [
+          "statement.break",
+          "statement.continue"
+        ],
+        "status": "draft"
+      },
+      "in-arm": {
+        "kind": "definition",
+        "statement": "`break`/`continue` may appear inside a block-bodied arm of a `match`/`switch`/`if` nested in a loop; they are bound by the innermost enclosing loop, not by the arm.",
+        "formal": "`break`/`continue` in an arm bind to the enclosing loop.",
+        "inputs": "a `break`/`continue` in an arm nested in a loop.",
+        "outputs": "binds to the loop.",
+        "depends_on": [
+          "statement.break-continue.innermost"
+        ],
+        "status": "draft"
+      },
+      "no-yield": {
+        "kind": "constraint",
+        "statement": "If an arm must produce a value (its enclosing `match`/`switch`/`if` is an expression), reaching a bare `break`/`continue` with no `yield` is a compile error.",
+        "formal": "bare `break`/`continue` in a value-producing arm ⇒ `err`; use `break yield x;`. When the construct's value is discarded, bare `break`/`continue` are unrestricted.",
+        "inputs": "a bare `break`/`continue` in a value-producing arm.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "statement.break",
+          "statement.continue"
+        ],
+        "status": "draft"
+      }
+    },
+    "infinite-loop": {
+      "kind": "definition",
+      "statement": "An infinite loop is written `while (true) { … }`; there is no separate `loop` keyword.",
+      "formal": "`while (true) { … }` is the infinite-loop form.",
+      "inputs": "a `while (true)` loop.",
+      "outputs": "a non-terminating loop.",
+      "depends_on": [],
+      "status": "draft"
+    },
+    "yield": {
+      "innermost": {
+        "kind": "guarantee",
+        "statement": "`yield` always produces a value for the innermost enclosing expression — the `match`, `switch`, or `if` it appears in — never for the loop, which is a statement.",
+        "formal": "`yield e;` targets the innermost enclosing `match`/`switch`/`if`.",
+        "inputs": "a `yield` inside an expression construct.",
+        "outputs": "produces the value for that construct.",
+        "depends_on": [
+          "match.arm.block-yield"
+        ],
+        "status": "draft"
+      },
+      "requires-expression": {
+        "kind": "constraint",
+        "statement": "`yield` requires an enclosing `match`/`switch`/`if` expression; a `yield` with no such enclosing expression (e.g. directly in a function or loop body) is a compile error.",
+        "formal": "`yield e;` valid iff within the body of a `match`/`switch`/`if`; else `err`.",
+        "inputs": "a `yield` statement.",
+        "outputs": "`err` if not inside a `match`/`switch`/`if`.",
+        "depends_on": [
+          "statement.yield.innermost"
+        ],
+        "status": "decided"
+      }
+    },
+    "break-yield": {
+      "kind": "definition",
+      "statement": "`break yield x;` produces `x` for the enclosing expression, then exits the loop.",
+      "formal": "`break yield x;` ⇒ the enclosing `match`/`switch`/`if` yields `⟦x⟧`, then control exits the loop.",
+      "inputs": "a `break yield`.",
+      "outputs": "yields `x`, then breaks.",
+      "depends_on": [
+        "statement.break",
+        "statement.yield.innermost"
+      ],
+      "status": "draft",
+      "scope": {
+        "kind": "constraint",
+        "statement": "`break yield`/`continue yield` are valid only where the innermost enclosing expression construct lies inside the loop being left — there must be something for the value to be produced for.",
+        "formal": "`break yield x;`/`continue yield x;` valid iff an enclosing `match`/`switch`/`if` is inside the loop; else `err`.",
+        "inputs": "a `break yield`/`continue yield`.",
+        "outputs": "`err` if no enclosing expression construct is in the loop.",
+        "depends_on": [
+          "statement.break-yield",
+          "statement.continue-yield"
+        ],
+        "status": "draft"
+      }
+    },
+    "continue-yield": {
+      "kind": "definition",
+      "statement": "`continue yield x;` produces `x` for the enclosing expression, then abandons the iteration.",
+      "formal": "`continue yield x;` ⇒ the enclosing expression yields `⟦x⟧`, then the iteration is abandoned.",
+      "inputs": "a `continue yield`.",
+      "outputs": "yields `x`, then continues.",
+      "depends_on": [
+        "statement.continue",
+        "statement.yield.innermost"
+      ],
+      "notes": "`continue yield` is legal but never useful (the value is discarded when the iteration is abandoned).",
+      "status": "draft"
+    },
+    "for": {
+      "statement": {
+        "kind": "definition",
+        "statement": "`for` is a statement, not an expression — the iterated sequence may be empty, so no value can be guaranteed to come out of it.",
+        "formal": "`for (…) { … }` produces no value; expression use ⇒ `err`.",
+        "inputs": "a for loop.",
+        "outputs": "no value.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "iterable": {
+        "kind": "definition",
+        "statement": "The iterated sequence is a range, a slice, or a fixed-size array.",
+        "formal": "`for (v in seq)` where `seq` is a range, `T[]`, or `T[n]`.",
+        "inputs": "a for-iterable.",
+        "outputs": "the sequence to iterate.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "range-iter": {
+        "kind": "definition",
+        "statement": "Iterating a range binds the loop variable to each integer from `a` to `b`, inclusive or exclusive per `statement.range.bounds`; the loop variable's type is the endpoints' common type (default `i32` for unsuffixed literals).",
+        "formal": "`for (i in a..b)` ⇒ `i = a, a+1, …, b-1`, with `type(i) = type(a) = type(b)`; `for (i in a..=b)` ⇒ `i = a, …, b`.",
+        "inputs": "a range for-loop.",
+        "outputs": "the loop variable takes each integer in the range, typed as the endpoints.",
+        "depends_on": [
+          "statement.range.bounds",
+          "statement.range.endpoint-agree"
+        ],
+        "status": "decided"
+      },
+      "slice-array-iter": {
+        "kind": "definition",
+        "statement": "Iterating a slice or array binds the loop variable to each element, in order from the first to the last.",
+        "formal": "`for (v in s)` ⇒ `v = s[0], s[1], …, s[n-1]` (a value copy per element).",
+        "inputs": "a slice/array for-loop.",
+        "outputs": "the loop variable takes each element.",
+        "depends_on": [
+          "statement.for.iterable"
+        ],
+        "status": "draft"
+      },
+      "loop-variable": {
+        "kind": "definition",
+        "statement": "The loop variable is a per-iteration binding, not a reference, and is immutable regardless of the iterated value's own binding.",
+        "formal": "`for (v in …)` ⇒ `v` is a fresh immutable binding each iteration (a value copy, not a view).",
+        "inputs": "a for loop variable.",
+        "outputs": "a per-iteration immutable value binding.",
+        "depends_on": [
+          "variable.binding.let"
+        ],
+        "status": "draft"
+      },
+      "loop-variable-reassign": {
+        "kind": "constraint",
+        "statement": "Reassigning the loop variable inside the body is a compile error; mutating an element requires writing to the collection by index or through a writable slice.",
+        "formal": "`v = …` (loop variable) ⇒ `err`.",
+        "inputs": "an assignment to the loop variable.",
+        "outputs": "`err`.",
+        "depends_on": [
+          "statement.for.loop-variable"
+        ],
+        "status": "draft"
+      },
+      "desugar": {
+        "kind": "definition",
+        "statement": "`for` is sugar for an indexed `while` (step the index, compare against the end, read the current element); `break`/`continue`/nesting/innermost-binding are exactly §10's.",
+        "formal": "`for (v in a..b) { B }` ≡ an indexed `while` over the range; `for (v in s)` ≡ an indexed `while` over `0..s.size`.",
+        "inputs": "a for loop.",
+        "outputs": "its desugared while form.",
+        "depends_on": [
+          "statement.while.statement",
+          "statement.break-continue.innermost"
+        ],
+        "status": "draft"
+      }
+    }
+  },
+  "string": {
+    "literal": {
+      "type": {
+        "kind": "definition",
+        "statement": "A string literal initializes a `byte[]` slice (a read-only view of `.rodata`), not a distinct type; it may also initialize a fixed `byte[n]` array (see `string.literal.to-array`).",
+        "formal": "`type(\"…\") = byte[]` (a slice view); `byte[n] = \"…\"` copies the bytes into an array.",
+        "inputs": "a string literal.",
+        "outputs": "a `byte[]` slice, or an initialized `byte[n]` array.",
+        "depends_on": [
+          "slice.representation"
+        ],
+        "status": "draft"
+      },
+      "to-array": {
+        "kind": "constraint",
+        "statement": "A string literal may initialize a fixed `byte[n]` array by copying its UTF-8 bytes from `.rodata`; the UTF-8 byte count must fit in `n`, checked **at compile time** (the literal's length is a constant), else a compile error. Any remaining elements are default-initialized (zeroed).",
+        "formal": "`byte[n] = \"…\"` valid iff `len(utf8(\"…\")) ≤ n` — a compile-time check (no runtime bounds check); else `err`. Bytes fill `[0, len)`, the rest are zeroed.",
+        "inputs": "a string literal initializing a `byte[n]` array.",
+        "outputs": "the array with the string's bytes copied in; `err` if it doesn't fit.",
+        "depends_on": [
+          "string.literal.utf8",
+          "array.copy-semantics"
+        ],
+        "status": "decided"
+      },
+      "rodata": {
+        "kind": "definition",
+        "statement": "A string literal's bytes are placed in read-only static storage (`.rodata`); the literal is a view of those bytes.",
+        "formal": "the literal's bytes live in `.rodata`; the `byte[]` value is `{ ptr = &rodata, len = n }`.",
+        "inputs": "a string literal.",
+        "outputs": "a slice viewing read-only static bytes.",
+        "depends_on": [
+          "string.literal.type"
+        ],
+        "status": "draft"
+      },
+      "no-alloc": {
+        "kind": "definition",
+        "statement": "A string literal never allocates; there is no owning or growable string type (an owning string, if any, is a later phase).",
+        "formal": "no heap allocation for a literal; no owning-string type exists.",
+        "inputs": "a string literal.",
+        "outputs": "a non-owning view; no allocation.",
+        "depends_on": [],
+        "status": "draft"
+      },
+      "no-null": {
+        "kind": "definition",
+        "statement": "A string literal stores exactly its contents — there is no trailing null terminator; the length is carried in the slice.",
+        "formal": "`len(\"…\") = n` (byte count of the contents); no implicit `\\0` appended.",
+        "inputs": "a string literal.",
+        "outputs": "the exact byte contents with no terminator.",
+        "depends_on": [
+          "string.literal.type"
+        ],
+        "status": "draft"
+      },
+      "escapes": {
+        "kind": "definition",
+        "statement": "String literals support the same escape sequences as `byte` literals: `\\0 \\n \\r \\t \\\\ \\\" \\'`. There is no raw-literal form.",
+        "formal": "escapes(string) = escapes(byte) per `type.byte.literal.escapes`; no raw-literal syntax.",
+        "inputs": "a string literal.",
+        "outputs": "its bytes after escape resolution.",
+        "depends_on": [
+          "type.byte.literal.escapes"
+        ],
+        "status": "decided"
+      },
+      "utf8-source": {
+        "kind": "definition",
+        "statement": "A string literal's source characters are UTF-8; the full 1–4-byte codepoint range is valid (`\"é\"`, `\"😀\"`), and the compiler decodes the source as UTF-8 and emits the UTF-8 bytes.",
+        "formal": "a string literal may contain any UTF-8 codepoint; `\"é\"` ⇒ bytes `0xC3 0xA9`.",
+        "inputs": "a string literal with UTF-8 source characters.",
+        "outputs": "its UTF-8 byte encoding.",
+        "depends_on": [],
+        "status": "decided"
+      },
+      "utf8": {
+        "kind": "guarantee",
+        "statement": "The compiler verifies that a string literal is valid UTF-8 and emits its UTF-8 bytes; an invalid UTF-8 sequence is a compile error.",
+        "formal": "each literal is validated as UTF-8 at compile time; invalid ⇒ `err`.",
+        "inputs": "a string literal.",
+        "outputs": "valid UTF-8 bytes; `err` if invalid.",
+        "depends_on": [
+          "string.literal.utf8-source"
+        ],
+        "status": "decided"
+      },
+      "readonly": {
+        "kind": "guarantee",
+        "statement": "A string literal always decays to a read-only `byte[]` view; it is never `&mut`-taken, so it can never yield a writable view, and writing through it is a compile error.",
+        "formal": "a literal is a read-only `byte[]`; `&mut \"…\"` ⇒ `err`; writing through the view ⇒ `err` (per `slice.write-readonly`).",
+        "inputs": "a string literal and any write attempt.",
+        "outputs": "read-only; writes are `err`.",
+        "depends_on": [
+          "slice.write-readonly",
+          "reference.address-of.lvalue"
+        ],
+        "status": "draft"
+      }
+    },
+    "ops": {
+      "kind": "definition",
+      "statement": "The built-in operations on a string are exactly §4's slice operations and nothing more: `.size` (length in bytes), `s[i]` (the `byte` at `i`), and `s[a..b]` (a `byte[]` sub-slice). No concatenation, formatting, or search exists.",
+      "formal": "ops(string) = {`.size`, `[i]`, `[a..b]`}; no `+`/format/search builtins.",
+      "inputs": "a string and an operation.",
+      "outputs": "the slice operation's result; other ops are `err`.",
+      "depends_on": [
+        "slice.size-builtin",
+        "slice.index.mechanism",
+        "slice.subslice.of-slice"
+      ],
+      "status": "draft"
+    },
+    "bytes-not-chars": {
+      "kind": "definition",
+      "statement": "A string is a `byte[]`, so `.size`, indexing, and sub-slicing count *bytes*, not characters; on multibyte UTF-8 these misalign (e.g. `\"é\".size` is 2, and `s[1..2]` can split a codepoint). This is expected behavior, not a footgun — character-level handling is a later string-object concern.",
+      "formal": "`.size`/`[i]`/`[a..b]` operate on byte positions; no character semantics are provided.",
+      "inputs": "a string and a byte-position operation.",
+      "outputs": "byte-based results (may split a UTF-8 sequence).",
+      "depends_on": [
+        "string.ops"
+      ],
+      "status": "decided"
+    }
+  }
+}
