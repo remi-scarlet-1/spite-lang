@@ -295,7 +295,7 @@
         "inputs": "an operator applied to integer operands.",
         "outputs": "the corresponding integer operation.",
         "depends_on": [],
-        "notes": "shift semantics and out-of-range behavior are `expression.shift`, `expression.shift.constant-out-of-bounds`, `expression.shift.out-of-bounds`.",
+        "notes": "shift semantics and out-of-range behavior are `expression.shift.semantics`, `expression.shift.constant-out-of-bounds`, `expression.shift.out-of-bounds`.",
         "status": "decided"
       },
       "overflow": {
@@ -688,15 +688,17 @@
       }
     },
     "shift": {
-      "kind": "definition",
-      "statement": "`x << n` shifts `x` left `n` bits (zero-fill). `x >> n` shifts `x` right `n` bits: arithmetic (sign-extending) for a signed integer (`i*`, `isz`), logical (zero-fill) for an unsigned integer (`u*`, `usz`).",
-      "formal": "`<<` zero-fills on the right; `>>` sign-fills on the left when `type(x)` is signed, zero-fills when unsigned.",
-      "inputs": "a shift expression `x << n` / `x >> n`.",
-      "outputs": "the shifted value.",
-      "depends_on": [
-        "type.integer.ops"
-      ],
-      "status": "decided",
+      "semantics": {
+        "outputs": "the shifted value.",
+        "statement": "`x << n` shifts `x` left `n` bits (zero-fill). `x >> n` shifts `x` right `n` bits: arithmetic (sign-extending) for a signed integer (`i*`, `isz`), logical (zero-fill) for an unsigned integer (`u*`, `usz`).",
+        "formal": "`<<` zero-fills on the right; `>>` sign-fills on the left when `type(x)` is signed, zero-fills when unsigned.",
+        "depends_on": [
+          "type.integer.ops"
+        ],
+        "kind": "definition",
+        "inputs": "a shift expression `x << n` / `x >> n`.",
+        "status": "decided"
+      },
       "constant-out-of-bounds": {
         "kind": "constraint",
         "statement": "A shift by a compile-time constant amount that is negative or ≥ the operand's bit width is a compile error.",
@@ -705,7 +707,7 @@
         "outputs": "`err`.",
         "depends_on": [
           "expression.constant-expression",
-          "expression.shift"
+          "expression.shift.semantics"
         ],
         "status": "decided"
       },
@@ -716,7 +718,7 @@
         "inputs": "a shift with a runtime out-of-range amount.",
         "outputs": "`unspecified`.",
         "depends_on": [
-          "expression.shift"
+          "expression.shift.semantics"
         ],
         "status": "decided"
       }
@@ -911,15 +913,17 @@
         "status": "draft"
       },
       "non-null": {
-        "kind": "guarantee",
-        "statement": "A `&T` is never null and is always bound to a live value at the moment it is created.",
-        "formal": "at creation, `⟦&x⟧ ≠ null` and points to a live value; no syntax produces null; `undefined` cannot initialize a reference or reference-holding value.",
-        "inputs": "the creation of a reference.",
-        "outputs": "a non-null pointer to a live value.",
-        "depends_on": [
-          "variable.initialization.undefined.value-type"
-        ],
-        "status": "draft",
+        "guarantee": {
+          "outputs": "a non-null pointer to a live value.",
+          "statement": "A `&T` is never null and is always bound to a live value at the moment it is created.",
+          "formal": "at creation, `⟦&x⟧ ≠ null` and points to a live value; no syntax produces null; `undefined` cannot initialize a reference or reference-holding value.",
+          "depends_on": [
+            "variable.initialization.undefined.value-type"
+          ],
+          "kind": "guarantee",
+          "inputs": "the creation of a reference.",
+          "status": "draft"
+        },
         "scope": {
           "kind": "definition",
           "statement": "The non-null guarantee is about creation, not the referent's lifetime: a reference may outlive its referent and dangle, which is unchecked.",
@@ -1110,13 +1114,15 @@
     },
     "dangling": {
       "return": {
-        "kind": "constraint",
-        "statement": "A function may not directly `return &local;` or `return &mut local;` where `local` is owned by that function's own stack frame.",
-        "formal": "`return &local` / `return &mut local` with `local` frame-owned ⇒ `err`.",
-        "inputs": "a return of an address-of a frame-owned local.",
-        "outputs": "`err`.",
-        "depends_on": [],
-        "status": "draft",
+        "constraint": {
+          "outputs": "`err`.",
+          "statement": "A function may not directly `return &local;` or `return &mut local;` where `local` is owned by that function's own stack frame.",
+          "formal": "`return &local` / `return &mut local` with `local` frame-owned ⇒ `err`.",
+          "depends_on": [],
+          "kind": "constraint",
+          "inputs": "a return of an address-of a frame-owned local.",
+          "status": "draft"
+        },
         "scope": {
           "kind": "definition",
           "statement": "The `return &local` constraint covers only frame-owned locals; returning a reference to a referent not owned by the frame (e.g. a `&mut` parameter's referent) is legal. The language currently defines no global variables, so a global referent is not a concept.",
@@ -1124,7 +1130,7 @@
           "inputs": "a return of a reference.",
           "outputs": "`err` only for a frame-owned local; otherwise allowed.",
           "depends_on": [
-            "reference.dangling.return"
+            "reference.dangling.return.constraint"
           ],
           "notes": "globals are deliberately absent from the language at this phase; see §5 (functions) when name-resolution scope is formalized.",
           "status": "decided"
@@ -1133,7 +1139,7 @@
       "footgun": {
         "kind": "footgun.ub",
         "statement": "No other dangling-reference case is checked — e.g. a local's address smuggled out inside a struct field, or a reference outliving its referent through any more indirect path.",
-        "formal": "all dangling cases other than `reference.dangling.return` are `unspecified` (unchecked).",
+        "formal": "all dangling cases other than `reference.dangling.return.constraint` are `unspecified` (unchecked).",
         "inputs": "any indirect dangling-reference scenario.",
         "outputs": "`unspecified` (unchecked).",
         "depends_on": [],
@@ -1775,15 +1781,17 @@
         "status": "decided"
       },
       "default": {
-        "kind": "definition",
-        "statement": "A field may declare a default value, used when the field is otherwise uninitialized.",
-        "formal": "`f: T = d` declares `d` as the field's default, used per `variable.initialization.defaulted.semantics`.",
-        "inputs": "a field declaration with a default.",
-        "outputs": "the default value.",
-        "depends_on": [
-          "variable.initialization.defaulted.semantics"
-        ],
-        "status": "draft",
+        "semantics": {
+          "outputs": "the default value.",
+          "statement": "A field may declare a default value, used when the field is otherwise uninitialized.",
+          "formal": "`f: T = d` declares `d` as the field's default, used per `variable.initialization.defaulted.semantics`.",
+          "depends_on": [
+            "variable.initialization.defaulted.semantics"
+          ],
+          "kind": "definition",
+          "inputs": "a field declaration with a default.",
+          "status": "draft"
+        },
         "constant": {
           "kind": "constraint",
           "statement": "A field default must be a compile-time constant expression.",
@@ -2508,16 +2516,18 @@
       }
     },
     "break-yield": {
-      "kind": "definition",
-      "statement": "`break yield x;` produces `x` for the enclosing expression, then exits the loop.",
-      "formal": "`break yield x;` ⇒ the enclosing `match`/`switch`/`if` yields `⟦x⟧`, then control exits the loop.",
-      "inputs": "a `break yield`.",
-      "outputs": "yields `x`, then breaks.",
-      "depends_on": [
-        "statement.break",
-        "statement.yield.innermost"
-      ],
-      "status": "draft",
+      "semantics": {
+        "outputs": "yields `x`, then breaks.",
+        "statement": "`break yield x;` produces `x` for the enclosing expression, then exits the loop.",
+        "formal": "`break yield x;` ⇒ the enclosing `match`/`switch`/`if` yields `⟦x⟧`, then control exits the loop.",
+        "depends_on": [
+          "statement.break",
+          "statement.yield.innermost"
+        ],
+        "kind": "definition",
+        "inputs": "a `break yield`.",
+        "status": "draft"
+      },
       "scope": {
         "kind": "constraint",
         "statement": "`break yield`/`continue yield` are valid only where the innermost enclosing expression construct lies inside the loop being left — there must be something for the value to be produced for.",
@@ -2525,7 +2535,7 @@
         "inputs": "a `break yield`/`continue yield`.",
         "outputs": "`err` if no enclosing expression construct is in the loop.",
         "depends_on": [
-          "statement.break-yield",
+          "statement.break-yield.semantics",
           "statement.continue-yield"
         ],
         "status": "draft"
