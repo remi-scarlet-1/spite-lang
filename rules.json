@@ -1,6 +1,6 @@
 {
   "_info": {
-    "version": "0.1.0",
+    "version": "0.1.1",
     "license": "GPL-3.0-only"
   },
   "lexical": {
@@ -538,6 +538,20 @@
         "outputs": "`err`.",
         "depends_on": [
           "type.no-implicit-conversion"
+        ],
+        "status": "decided"
+      }
+    },
+    "composition": {
+      "nested-view": {
+        "kind": "definition",
+        "statement": "A slice `T[]` or fixed array `T[n]` may have an element type `T` that is itself a slice or a reference — e.g. `byte[][]` (a slice of `byte[]`), `byte[][n]` (an array of `byte[]`), `&T[]` (a slice of `&T`). There is no arbitrary depth limit. The single prohibited nesting is `&&T` (reference to reference).",
+        "formal": "`T` in `T[]` / `T[n]` is unrestricted — a value, slice, or reference, to any depth; `&&T` is the one exception (`err`).",
+        "inputs": "a slice or array type with a slice/reference element.",
+        "outputs": "the type is legal, except `&&T` (`err`).",
+        "depends_on": [
+          "reference.disallow-double",
+          "slice.representation"
         ],
         "status": "decided"
       }
@@ -1685,6 +1699,32 @@
         "function.method.definition"
       ],
       "status": "draft"
+    },
+    "main": {
+      "entry": {
+        "kind": "definition",
+        "statement": "`main` is the program's entry point. Its signature is `fn main(args: byte[][]) -> i32` — one parameter, a read-only `byte[][]` of program arguments, and an `i32` return whose value is the program's observable result.",
+        "formal": "execution begins by calling `main`; `args : byte[][]`; `⟦main(args)⟧ : i32` is the program's observable result.",
+        "inputs": "a program and its `main`.",
+        "outputs": "the program's observable result (`main`'s `i32`).",
+        "depends_on": [
+          "type.composition.nested-view",
+          "slice.representation"
+        ],
+        "notes": "the source of `args`' backing storage (operating-system arguments) and the mapping of the `i32` to a process exit code are runtime-spec concerns, not language rules.",
+        "status": "decided"
+      },
+      "unique": {
+        "kind": "constraint",
+        "statement": "A program has exactly one `main`; zero or more than one is a compile error.",
+        "formal": "`count(main) = 1`, else `err`.",
+        "inputs": "a program's `main` declarations.",
+        "outputs": "`err` if there is not exactly one `main`.",
+        "depends_on": [
+          "function.main.entry"
+        ],
+        "status": "decided"
+      }
     }
   },
   "struct": {
